@@ -1678,6 +1678,12 @@ offsets = {
     "SecondaryColor3hvNV": 1642,
     "InternalSetError": 1643,
     "TexPageCommitmentEXT": 1644,
+    "CurrentPaletteMatrixOES": 1645,
+    "LoadPaletteFromModelViewMatrixOES": 1646,
+    "MatrixIndexPointerOES": 1647,
+    "WeightPointerOES": 1648,
+    "RenderbufferStorageMultisampleIMG": 1649,
+    "FramebufferTexture2DMultisampleIMG": 1650,
 }
 
 functions = [
