@@ -1633,6 +1633,12 @@ all_functions = [
     "GetSemaphoreParameterivNV",
     "SemaphoreParameterivNV",
     "TexPageCommitmentEXT",
+    "CurrentPaletteMatrixOES",
+    "LoadPaletteFromModelViewMatrixOES",
+    "MatrixIndexPointerOES",
+    "WeightPointerOES",
+    "RenderbufferStorageMultisampleIMG",
+    "FramebufferTexture2DMultisampleIMG",
 
     # Keep these last. They are never used by any app.
     "ColorTable",
