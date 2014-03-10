@@ -38,6 +38,9 @@ _mesa_is_valid_generate_texture_mipmap_internalformat(struct gl_context *ctx,
 void GLAPIENTRY
 _mesa_GenerateMipmap_no_error(GLenum target);
 
+void GLAPIENTRY
+_mesa_GenerateMipmapEXT(GLenum target);
+
 extern void GLAPIENTRY
 _mesa_GenerateMipmap(GLenum target);
 
