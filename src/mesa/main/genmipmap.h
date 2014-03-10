@@ -45,6 +45,9 @@ void GLAPIENTRY
 _mesa_GenerateTextureMipmap_no_error(GLuint texture);
 
 extern void GLAPIENTRY
+_mesa_GenerateMipmapEXT(GLenum target);
+
+extern void GLAPIENTRY
 _mesa_GenerateTextureMipmap(GLuint texture);
 
 extern void GLAPIENTRY

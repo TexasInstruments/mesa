@@ -1973,6 +1973,11 @@ _mesa_detach_renderbuffer(struct gl_context *ctx,
    return progress;
 }
 
+GLboolean GLAPIENTRY
+_mesa_IsRenderbufferEXT(GLuint renderbuffer)
+{
+   return _mesa_IsRenderbuffer(renderbuffer);
+}
 
 void GLAPIENTRY
 _mesa_DeleteRenderbuffers(GLsizei n, const GLuint *renderbuffers)
@@ -2683,6 +2688,12 @@ renderbuffer_storage_target(GLenum target, GLenum internalFormat,
 
 
 void GLAPIENTRY
+_mesa_DeleteRenderbuffersEXT(GLsizei n, const GLuint *renderbuffers)
+{
+   _mesa_DeleteRenderbuffers(n, renderbuffers);
+}
+
+void GLAPIENTRY
 _mesa_EGLImageTargetRenderbufferStorageOES(GLenum target, GLeglImageOES image)
 {
    struct gl_renderbuffer *rb;
@@ -2712,6 +2723,11 @@ _mesa_EGLImageTargetRenderbufferStorageOES(GLenum target, GLeglImageOES image)
    ctx->Driver.EGLImageTargetRenderbufferStorage(ctx, rb, image);
 }
 
+void GLAPIENTRY
+_mesa_GenRenderbuffersEXT(GLsizei n, GLuint *renderbuffers)
+{
+   _mesa_GenRenderbuffers(n, renderbuffers);
+}
 
 /**
  * Helper function for _mesa_GetRenderbufferParameteriv() and
@@ -2744,6 +2760,12 @@ _mesa_RenderbufferStorage(GLenum target, GLenum internalFormat,
                                NO_SAMPLES, 0, "glRenderbufferStorage");
 }
 
+void GLAPIENTRY
+_mesa_RenderbufferStorageEXT(GLenum target, GLenum internalFormat,
+                             GLsizei width, GLsizei height)
+{
+   _mesa_RenderbufferStorage(target, internalFormat, width, height);
+}
 
 void GLAPIENTRY
 _mesa_RenderbufferStorageMultisample(GLenum target, GLsizei samples,
@@ -2945,6 +2967,11 @@ _mesa_GetNamedRenderbufferParameteriv(GLuint renderbuffer, GLenum pname,
                                  "glGetNamedRenderbufferParameteriv");
 }
 
+void GLAPIENTRY
+_mesa_GetRenderbufferParameterivEXT(GLenum target, GLenum pname, GLint *params)
+{
+   _mesa_GetRenderbufferParameteriv(target, pname, params);
+}
 
 void GLAPIENTRY
 _mesa_GetNamedRenderbufferParameterivEXT(GLuint renderbuffer, GLenum pname,
@@ -2978,6 +3005,11 @@ _mesa_IsFramebuffer(GLuint framebuffer)
    return GL_FALSE;
 }
 
+GLboolean GLAPIENTRY
+_mesa_IsFramebufferEXT(GLuint framebuffer)
+{
+  return _mesa_IsFramebuffer(framebuffer);
+}
 
 /**
  * Check if any of the attachments of the given framebuffer are textures
@@ -3212,6 +3244,11 @@ _mesa_DeleteFramebuffers(GLsizei n, const GLuint *framebuffers)
    }
 }
 
+void GLAPIENTRY
+_mesa_DeleteFramebuffersEXT(GLsizei n, const GLuint *framebuffers)
+{
+   _mesa_DeleteFramebuffers(n, framebuffers);
+}
 
 /**
  * This is the implementation for glGenFramebuffers and glCreateFramebuffers.
@@ -3258,6 +3295,11 @@ create_framebuffers(GLsizei n, GLuint *framebuffers, bool dsa)
    _mesa_HashUnlockMutex(ctx->Shared->FrameBuffers);
 }
 
+void GLAPIENTRY
+_mesa_GenFramebuffersEXT(GLsizei n, GLuint *framebuffers)
+{
+   _mesa_GenFramebuffers(n, framebuffers);
+}
 
 void GLAPIENTRY
 _mesa_GenFramebuffers(GLsizei n, GLuint *framebuffers)
@@ -3297,6 +3339,11 @@ _mesa_check_framebuffer_status(struct gl_context *ctx,
    return buffer->_Status;
 }
 
+GLenum GLAPIENTRY
+_mesa_CheckFramebufferStatusEXT(GLenum target)
+{
+   return _mesa_CheckFramebufferStatus(target);
+}
 
 GLenum GLAPIENTRY
 _mesa_CheckFramebufferStatus_no_error(GLenum target)
@@ -3909,6 +3956,12 @@ _mesa_FramebufferTexture1D_no_error(GLenum target, GLenum attachment,
                                           texture, level, 0);
 }
 
+void GLAPIENTRY
+_mesa_FramebufferTexture1DEXT(GLenum target, GLenum attachment,
+                              GLenum textarget, GLuint texture, GLint level)
+{
+   _mesa_FramebufferTexture1D(target, attachment, textarget, texture, level);
+}
 
 void GLAPIENTRY
 _mesa_FramebufferTexture1D(GLenum target, GLenum attachment,
@@ -3949,6 +4002,12 @@ _mesa_FramebufferTexture2DMultisampleEXT(GLenum target, GLenum attachment,
                                  false);
 }
 
+void GLAPIENTRY
+_mesa_FramebufferTexture2DEXT(GLenum target, GLenum attachment,
+                              GLenum textarget, GLuint texture, GLint level)
+{
+   _mesa_FramebufferTexture2D(target, attachment, textarget, texture, level);
+}
 
 void GLAPIENTRY
 _mesa_FramebufferTexture3D_no_error(GLenum target, GLenum attachment,
@@ -4057,6 +4116,15 @@ frame_buffer_texture(GLuint framebuffer, GLenum target,
 
    _mesa_framebuffer_texture(ctx, fb, attachment, att, texObj, textarget,
                              level, 0, layer, layered);
+}
+
+void GLAPIENTRY
+_mesa_FramebufferTexture3DEXT(GLenum target, GLenum attachment,
+                              GLenum textarget, GLuint texture,
+                              GLint level, GLint zoffset)
+{
+   _mesa_FramebufferTexture3D(target, attachment, textarget, texture,
+                              level, zoffset);
 }
 
 void GLAPIENTRY
@@ -4310,6 +4378,15 @@ _mesa_FramebufferRenderbuffer(GLenum target, GLenum attachment,
 
    framebuffer_renderbuffer_error(ctx, fb, attachment, renderbuffertarget,
                                   renderbuffer, "glFramebufferRenderbuffer");
+}
+
+void GLAPIENTRY
+_mesa_FramebufferRenderbufferEXT(GLenum target, GLenum attachment,
+                                 GLenum renderbufferTarget,
+                                 GLuint renderbuffer)
+{
+   _mesa_FramebufferRenderbuffer(target, attachment, renderbufferTarget,
+                                 renderbuffer);
 }
 
 void GLAPIENTRY
@@ -4713,6 +4790,12 @@ invalid_pname_enum:
    return;
 }
 
+void GLAPIENTRY
+_mesa_GetFramebufferAttachmentParameterivEXT(GLenum target, GLenum attachment,
+                                             GLenum pname, GLint *params)
+{
+   _mesa_GetFramebufferAttachmentParameteriv(target, attachment, pname, params);
+}
 
 void GLAPIENTRY
 _mesa_GetFramebufferAttachmentParameteriv(GLenum target, GLenum attachment,
