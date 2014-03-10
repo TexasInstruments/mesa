@@ -1679,6 +1679,12 @@ offsets = {
     "InternalSetError": 1643,
     "TexPageCommitmentEXT": 1644,
     "TexturePageCommitmentEXT" : 1645,
+    "CurrentPaletteMatrixOES" : 1646,
+    "LoadPaletteFromModelViewMatrixOES" : 1647,
+    "MatrixIndexPointerOES" : 1648,
+    "WeightPointerOES" : 1649,
+    "RenderbufferStorageMultisampleIMG" : 1650,
+    "FramebufferTexture2DMultisampleIMG" : 1651,
 }
 
 functions = [
