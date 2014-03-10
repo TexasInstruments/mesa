@@ -1705,6 +1705,12 @@ offsets = {
     "DrawElementsInstancedBaseVertexBaseInstanceDrawID": 1669,
     "InternalInvalidateFramebufferAncillaryMESA": 1670,
     "TexPageCommitmentEXT": 1671,
+    "CurrentPaletteMatrixOES" : 1672,
+    "LoadPaletteFromModelViewMatrixOES" : 1673,
+    "MatrixIndexPointerOES" : 1674,
+    "WeightPointerOES" : 1675,
+    "RenderbufferStorageMultisampleIMG" : 1676,
+    "FramebufferTexture2DMultisampleIMG" : 1677,
 }
 
 functions = [
