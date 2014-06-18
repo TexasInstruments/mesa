@@ -888,6 +888,9 @@ eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read,
          RETURN_EGL_ERROR(disp, EGL_BAD_SURFACE, EGL_FALSE);
       if (draw_surf || read_surf)
          RETURN_EGL_ERROR(disp, EGL_BAD_MATCH, EGL_FALSE);
+      if (disp->Extensions.KHR_surfaceless_context && context &&
+          (context->ClientAPI != EGL_OPENGL_ES_API || context->ClientMajorVersion == 1))
+         RETURN_EGL_ERROR(disp, EGL_BAD_MATCH, EGL_FALSE);
    }
 
    /*    If a native window underlying either draw or read is no longer valid,
