@@ -436,7 +436,11 @@ loader_get_pci_driver(int fd)
    char *driver = NULL;
 
    if (!loader_get_pci_id_for_fd(fd, &vendor_id, &chip_id))
+#if 1
+      return strdup("pvr");
+#else
       return NULL;
+#endif
 
    for (i = 0; i < ARRAY_SIZE(driver_map); i++) {
       if (vendor_id != driver_map[i].vendor_id)
