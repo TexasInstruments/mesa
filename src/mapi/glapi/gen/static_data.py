@@ -1677,6 +1677,7 @@ offsets = {
     "SecondaryColor3hNV": 1641,
     "SecondaryColor3hvNV": 1642,
     "InternalSetError": 1643,
+    "TexPageCommitmentEXT": 1644,
 }
 
 functions = [
