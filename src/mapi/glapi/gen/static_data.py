@@ -1632,6 +1632,7 @@ all_functions = [
     "CreateSemaphoresNV",
     "GetSemaphoreParameterivNV",
     "SemaphoreParameterivNV",
+    "TexPageCommitmentEXT",
 
     # Keep these last. They are never used by any app.
     "ColorTable",
