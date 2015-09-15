@@ -914,6 +914,7 @@ PUBLIC EGLBoolean EGLAPIENTRY
 eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx)
 {
    _EGLDisplay *disp = _eglLockDisplay(dpy);
+   _EGLContext *current_context = _eglGetCurrentContext();
    _EGLContext *context = _eglLookupContext(ctx, disp);
    _EGLSurface *draw_surf = _eglLookupSurface(draw, disp);
    _EGLSurface *read_surf = _eglLookupSurface(read, disp);
@@ -967,9 +968,19 @@ eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx)
        !draw_surf->ProtectedContent)
       RETURN_EGL_ERROR(disp, EGL_BAD_ACCESS, EGL_FALSE);
 
-   egl_relax (disp, &draw_surf->Resource, &read_surf->Resource,
-              &context->Resource) {
-      ret = disp->Driver->MakeCurrent(disp, draw_surf, read_surf, context);
+   /* As an optimisation don't do anything unless something has changed */
+   if (context != current_context ||
+       (current_context &&
+        (draw_surf != current_context->DrawSurface ||
+         read_surf != current_context->ReadSurface)) ||
+       (!current_context && (draw_surf || read_surf))) {
+           egl_relax (disp, &draw_surf->Resource, &read_surf->Resource,
+                      &context->Resource) {
+              ret = disp->Driver->MakeCurrent(disp, draw_surf, read_surf,
+                                              context);
+	   }
+   } else {
+	   ret = EGL_TRUE;
    }
 
    RETURN_EGL_EVAL(disp, ret);
