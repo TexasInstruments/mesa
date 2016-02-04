@@ -1711,6 +1711,9 @@ offsets = {
     "WeightPointerOES" : 1675,
     "RenderbufferStorageMultisampleIMG" : 1676,
     "FramebufferTexture2DMultisampleIMG" : 1677,
+    "ClearPixelLocalStorageuiEXT" : 1678,
+    "FramebufferPixelLocalStorageSizeEXT" : 1679,
+    "GetFramebufferPixelLocalStorageSizeEXT" : 1680,
 }
 
 functions = [
