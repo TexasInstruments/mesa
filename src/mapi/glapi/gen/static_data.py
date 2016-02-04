@@ -1639,6 +1639,9 @@ all_functions = [
     "WeightPointerOES",
     "RenderbufferStorageMultisampleIMG",
     "FramebufferTexture2DMultisampleIMG",
+    "ClearPixelLocalStorageuiEXT",
+    "FramebufferPixelLocalStorageSizeEXT",
+    "GetFramebufferPixelLocalStorageSizeEXT",
 
     # Keep these last. They are never used by any app.
     "ColorTable",
