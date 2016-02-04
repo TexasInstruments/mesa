@@ -1642,6 +1642,8 @@ all_functions = [
     "ClearPixelLocalStorageuiEXT",
     "FramebufferPixelLocalStorageSizeEXT",
     "GetFramebufferPixelLocalStorageSizeEXT",
+    "FramebufferTexture2DDownsampleIMG",
+    "FramebufferTextureLayerDownsampleIMG",
 
     # Keep these last. They are never used by any app.
     "ColorTable",
