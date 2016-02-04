@@ -1688,6 +1688,8 @@ offsets = {
     "ClearPixelLocalStorageuiEXT" : 1652,
     "FramebufferPixelLocalStorageSizeEXT" : 1653,
     "GetFramebufferPixelLocalStorageSizeEXT" : 1654,
+    "FramebufferTexture2DDownsampleIMG" : 1655,
+    "FramebufferTextureLayerDownsampleIMG" : 1656,
 }
 
 functions = [
