@@ -1744,6 +1744,7 @@ offsets = {
     "VertexAttribDivisorNV" : 1708,
     "TexStorageAttribs2DEXT": 1709,
     "TexStorageAttribs3DEXT": 1710,
+    "GetIntegeri_vIMG": 1711,
 }
 
 functions = [
