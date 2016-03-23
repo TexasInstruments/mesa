@@ -1742,6 +1742,7 @@ offsets = {
     "DrawArraysInstancedNV" : 1706,
     "DrawElementsInstancedNV" : 1707,
     "VertexAttribDivisorNV" : 1708,
+    "GetIntegeri_vIMG": 1709,
 }
 
 functions = [
