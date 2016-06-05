@@ -414,7 +414,7 @@ endforeach
 _platforms = get_option('platforms')
 if _platforms.contains('auto')
   if system_has_kms_drm
-    _platforms = ['x11', 'wayland']
+    _platforms = ['x11', 'wayland', 'null']
   elif host_machine.system() == 'cygwin'
     _platforms = ['x11']
   elif host_machine.system() == 'haiku'
@@ -436,6 +436,7 @@ with_platform_wayland = _platforms.contains('wayland')
 with_platform_haiku = _platforms.contains('haiku')
 with_platform_windows = _platforms.contains('windows')
 with_platform_macos = _platforms.contains('macos')
+with_platform_null = _platforms.contains('null')
 
 with_glx = get_option('glx')
 if with_glx == 'auto'
@@ -927,6 +928,10 @@ if get_option('allow-kcmp') \
     .disable_auto_if(with_platform_android) \
     .allowed()
   pre_args += '-DALLOW_KCMP'
+endif
+
+if with_platform_null
+  pre_args += '-DHAVE_NULL_PLATFORM'
 endif
 
 # On Windows, a venv has no versioned aliased to 'python'.
@@ -1701,6 +1706,7 @@ with_gallium_drisw_kms = false
 if system_has_kms_drm
   dep_libdrm = dependency(
     'libdrm', version : '>=' + _drm_ver,
+    required : with_dri2 or with_dri or with_gbm or with_platform_null,
     required : with_dri2 or with_dri or with_gbm,
     allow_fallback: allow_fallback_for_libdrm,
   )

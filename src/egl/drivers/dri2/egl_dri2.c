@@ -968,6 +968,9 @@ dri2_initialize(_EGLDisplay *disp)
    case _EGL_PLATFORM_DEVICE:
       ret = dri2_initialize_device(disp);
       break;
+   case _EGL_PLATFORM_NULL:
+      ret = dri2_initialize_null(disp);
+      break;
    case _EGL_PLATFORM_X11:
    case _EGL_PLATFORM_XCB:
       ret = dri2_initialize_x11(disp);
@@ -1041,11 +1044,6 @@ dri2_display_destroy(_EGLDisplay *disp)
       if (dri2_dpy->dri_screen_display_gpu && !dri2_dpy->compat_gpus)
          driDestroyScreen(dri2_dpy->dri_screen_display_gpu);
    }
-   if (dri2_dpy->fd_display_gpu >= 0 &&
-       dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
-      close(dri2_dpy->fd_display_gpu);
-   if (dri2_dpy->fd_render_gpu >= 0)
-      close(dri2_dpy->fd_render_gpu);
 
    free(dri2_dpy->driver_name);
 
@@ -1073,10 +1071,19 @@ dri2_display_destroy(_EGLDisplay *disp)
       break;
    case _EGL_PLATFORM_DEVICE:
       break;
+   case _EGL_PLATFORM_NULL:
+      dri2_teardown_null(dri2_dpy);
+      break;
    default:
       unreachable("Platform teardown is not properly hooked.");
       break;
    }
+
+   if (dri2_dpy->fd_display_gpu >= 0 &&
+       dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+      close(dri2_dpy->fd_display_gpu);
+   if (dri2_dpy->fd_render_gpu >= 0)
+      close(dri2_dpy->fd_render_gpu);
 
    /* The drm platform does not create the screen/driver_configs but reuses
     * the ones from the gbm device. As such the gbm itself is responsible
