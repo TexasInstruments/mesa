@@ -82,6 +82,10 @@ struct zwp_linux_dmabuf_feedback_v1;
 
 #endif /* HAVE_ANDROID_PLATFORM */
 
+#ifdef HAVE_NULL_PLATFORM
+#include <xf86drmMode.h>
+#endif
+
 #include "eglconfig.h"
 #include "eglcontext.h"
 #include "eglcurrent.h"
@@ -98,6 +102,22 @@ struct zwp_linux_dmabuf_feedback_v1;
 #include "util/u_vector.h"
 
 struct wl_buffer;
+
+#ifdef HAVE_NULL_PLATFORM
+struct display_output {
+   bool                   in_use;
+   uint32_t               connector_id;
+   drmModePropertyRes   **connector_prop_res;
+   uint32_t               crtc_id;
+   drmModePropertyRes   **crtc_prop_res;
+   uint32_t               plane_id;
+   drmModePropertyRes   **plane_prop_res;
+   drmModeModeInfo        mode;
+   uint32_t               mode_blob_id;
+   unsigned               formats;
+   drmModeAtomicReq      *atomic_state;
+};
+#endif
 
 struct dri2_egl_display_vtbl {
    /* mandatory on Wayland, unused otherwise */
@@ -315,6 +335,11 @@ struct dri2_egl_display {
    bool is_render_node;
 #endif
 
+#ifdef HAVE_NULL_PLATFORM
+   bool                      atomic_enabled;
+   struct display_output     output;
+#endif
+
 #ifdef HAVE_ANDROID_PLATFORM
    struct u_gralloc *gralloc;
    /* gralloc vendor usage bit for front rendering */
@@ -357,9 +382,12 @@ struct dri2_egl_surface {
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback dmabuf_feedback, pending_dmabuf_feedback;
    bool compositor_using_another_device;
-   int format;
    bool resized;
    bool received_dmabuf_feedback;
+#endif
+
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_NULL_PLATFORM)
+   int format;
 #endif
 
 #ifdef HAVE_DRM_PLATFORM
@@ -369,12 +397,15 @@ struct dri2_egl_surface {
    /* EGL-owned buffers */
    __DRIbuffer *local_buffers[__DRI_BUFFER_COUNT];
 
-#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM)
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM) || \
+    defined(HAVE_NULL_PLATFORM)
    struct {
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_NULL_PLATFORM)
+      __DRIimage *dri_image;
+#endif
 #ifdef HAVE_WAYLAND_PLATFORM
       struct wl_buffer *wl_buffer;
       bool wl_release;
-      __DRIimage *dri_image;
       /* for is_different_gpu case. NULL else */
       __DRIimage *linear_copy;
       /* for swrast */
@@ -383,6 +414,9 @@ struct dri2_egl_surface {
 #endif
 #ifdef HAVE_DRM_PLATFORM
       struct gbm_bo *bo;
+#endif
+#ifdef HAVE_NULL_PLATFORM
+      uint32_t fb_id;
 #endif
       bool locked;
       int age;
@@ -417,6 +451,10 @@ struct dri2_egl_surface {
 
 #ifdef HAVE_WAYLAND_PLATFORM
    void                 *swrast_front;
+#endif
+
+#ifdef HAVE_NULL_PLATFORM
+   uint32_t             front_fb_id;
 #endif
 
    int out_fence_fd;
@@ -615,6 +653,21 @@ dri2_initialize_android(_EGLDisplay *disp)
 
 EGLBoolean
 dri2_initialize_surfaceless(_EGLDisplay *disp);
+
+#ifdef HAVE_NULL_PLATFORM
+EGLBoolean
+dri2_initialize_null(_EGLDisplay *disp);
+void
+dri2_teardown_null(struct dri2_egl_display *dri2_dpy);
+#else
+static inline EGLBoolean
+dri2_initialize_null(_EGLDisplay *disp)
+{
+   return _eglError(EGL_NOT_INITIALIZED, "Null platform not built");
+}
+static inline void
+dri2_teardown_null(struct dri2_egl_display *dri2_dpy) {}
+#endif
 
 EGLBoolean
 dri2_initialize_device(_EGLDisplay *disp);
