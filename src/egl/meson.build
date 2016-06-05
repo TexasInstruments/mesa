@@ -142,6 +142,11 @@ if with_platform_tizen
   incs_for_egl += [inc_loader]
   deps_for_egl += [dep_tizen, dep_libdrm]
 endif
+if with_platform_null
+  files_egl += files('drivers/dri2/platform_null.c')
+  incs_for_egl += [inc_loader]
+  deps_for_egl += dep_libdrm
+endif
 
 if cc.has_function('mincore')
   c_args_for_egl += '-DHAVE_MINCORE'

@@ -328,7 +328,7 @@ endif
 _platforms = get_option('platforms')
 if _platforms.contains('auto')
   if system_has_kms_drm
-    _platforms = ['x11', 'wayland']
+    _platforms = ['x11', 'wayland', 'null']
   elif ['darwin', 'cygwin'].contains(host_machine.system())
     _platforms = ['x11']
   elif ['haiku'].contains(host_machine.system())
@@ -347,6 +347,7 @@ with_platform_wayland = _platforms.contains('wayland')
 with_platform_haiku = _platforms.contains('haiku')
 with_platform_windows = _platforms.contains('windows')
 with_platform_tizen = _platforms.contains('tizen')
+with_platform_null = _platforms.contains('null')
 
 if with_platform_tizen and _platforms.length() != 1
   error('tizen cannot be enabled at the same time as other platforms')
@@ -902,6 +903,26 @@ if with_platform_tizen
     dependency('tpl-egl'),
   ]
   pre_args += '-DHAVE_TIZEN_PLATFORM'
+endif
+if with_platform_null
+  pre_args += '-DHAVE_NULL_PLATFORM'
+endif
+if with_platform_android
+  dep_android = [
+    dependency('cutils'),
+    dependency('hardware'),
+    dependency('sync'),
+  ]
+  if with_gallium
+    dep_android += dependency('backtrace')
+  endif
+  if get_option('platform-sdk-version') >= 26
+    dep_android += dependency('nativewindow')
+  endif
+  pre_args += '-DHAVE_ANDROID_PLATFORM'
+endif
+if with_platform_haiku
+  pre_args += '-DHAVE_HAIKU_PLATFORM'
 endif
 
 prog_python = import('python').find_installation('python3')
@@ -1502,7 +1523,7 @@ dep_libdrm = dependency(
   'libdrm', version : '>=' + _drm_ver,
   # GNU/Hurd includes egl_dri2, without drm.
   required : (with_dri2 and host_machine.system() != 'gnu') or with_dri3 or
-             with_platform_tizen
+             with_platform_tizen or with_platform_null
 )
 if dep_libdrm.found()
   pre_args += '-DHAVE_LIBDRM'

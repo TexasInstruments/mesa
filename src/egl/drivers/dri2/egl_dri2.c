@@ -1282,6 +1282,9 @@ dri2_initialize(_EGLDisplay *disp)
    case _EGL_PLATFORM_DEVICE:
       ret = dri2_initialize_device(disp);
       break;
+   case _EGL_PLATFORM_NULL:
+      ret = dri2_initialize_null(disp);
+      break;
    case _EGL_PLATFORM_X11:
    case _EGL_PLATFORM_XCB:
       ret = dri2_initialize_x11(disp);
@@ -1384,6 +1387,9 @@ dri2_display_destroy(_EGLDisplay *disp)
          tpl_object_unreference((tpl_object_t *) dri2_dpy->tpl_dpy);
       break;
 #endif
+   case _EGL_PLATFORM_NULL:
+      dri2_teardown_null(dri2_dpy);
+      break;
    default:
       /* TODO: add teardown for other platforms */
       break;

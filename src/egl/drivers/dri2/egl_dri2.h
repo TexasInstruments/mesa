@@ -75,6 +75,10 @@ struct zwp_linux_dmabuf_v1;
 #include <tbm_surface_internal.h>
 #endif
 
+#ifdef HAVE_NULL_PLATFORM
+#include <xf86drmMode.h>
+#endif
+
 #include "eglconfig.h"
 #include "eglcontext.h"
 #include "egldevice.h"
@@ -92,6 +96,22 @@ struct zwp_linux_dmabuf_v1;
 #define EGL_DRI2_MAX_FORMATS 10
 
 struct wl_buffer;
+
+#ifdef HAVE_NULL_PLATFORM
+struct display_output {
+   bool                   in_use;
+   uint32_t               connector_id;
+   drmModePropertyRes   **connector_prop_res;
+   uint32_t               crtc_id;
+   drmModePropertyRes   **crtc_prop_res;
+   uint32_t               plane_id;
+   drmModePropertyRes   **plane_prop_res;
+   drmModeModeInfo        mode;
+   uint32_t               mode_blob_id;
+   unsigned               formats;
+   drmModeAtomicReq      *atomic_state;
+};
+#endif
 
 struct dri2_egl_display_vtbl {
    /* mandatory on Wayland, unused otherwise */
@@ -251,6 +271,11 @@ struct dri2_egl_display
    char                     *device_name;
 #endif
 
+#ifdef HAVE_NULL_PLATFORM
+   bool                      atomic_enabled;
+   struct display_output     output;
+#endif
+
 #ifdef HAVE_ANDROID_PLATFORM
    const gralloc_module_t *gralloc;
 #endif
@@ -324,7 +349,10 @@ struct dri2_egl_surface
    struct wl_display     *wl_dpy_wrapper;
    struct wl_drm         *wl_drm_wrapper;
    struct wl_callback    *throttle_callback;
-   int                    format;
+#endif
+
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_NULL_PLATFORM)
+   int			  format;
 #endif
 
 #ifdef HAVE_DRM_PLATFORM
@@ -350,9 +378,10 @@ struct dri2_egl_surface
    __DRIbuffer           *local_buffers[__DRI_BUFFER_COUNT];
 
 #if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM) || \
-    defined(HAVE_TIZEN_PLATFORM)
+   defined(HAVE_TIZEN_PLATFORM) || defined(HAVE_NULL_PLATFORM)
    struct {
-#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_TIZEN_PLATFORM)
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_TIZEN_PLATFORM) || \
+   defined(HAVE_NULL_PLATFORM)
       __DRIimage         *dri_image;
 #endif
 #ifdef HAVE_WAYLAND_PLATFORM
@@ -369,6 +398,9 @@ struct dri2_egl_surface
 #endif
 #ifdef HAVE_TIZEN_PLATFORM
       tbm_surface_h       tbm_surf;
+#endif
+#ifdef HAVE_NULL_PLATFORM
+      uint32_t            fb_id;
 #endif
       bool                locked;
       int                 age;
@@ -398,6 +430,10 @@ struct dri2_egl_surface
 
 #ifdef HAVE_WAYLAND_PLATFORM
    void                 *swrast_front;
+#endif
+
+#ifdef HAVE_NULL_PLATFORM
+   uint32_t             front_fb_id;
 #endif
 
    int out_fence_fd;
@@ -578,6 +614,21 @@ dri2_initialize_surfaceless(_EGLDisplay *disp);
 #ifdef HAVE_TIZEN_PLATFORM
 EGLBoolean
 dri2_initialize_tizen(_EGLDisplay *disp);
+#endif
+
+#ifdef HAVE_NULL_PLATFORM
+EGLBoolean
+dri2_initialize_null(_EGLDisplay *disp);
+void
+dri2_teardown_null(struct dri2_egl_display *dri2_dpy);
+#else
+static inline EGLBoolean
+dri2_initialize_null(_EGLDisplay *disp)
+{
+   return _eglError(EGL_NOT_INITIALIZED, "Null platform not built");
+}
+static inline void
+dri2_teardown_null(struct dri2_egl_display *dri2_dpy) {}
 #endif
 
 EGLBoolean
