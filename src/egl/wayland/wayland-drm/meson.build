@@ -32,3 +32,18 @@ libwayland_drm = static_library(
   include_directories : inc_include,
   build_by_default : false,
 )
+
+install_data('wayland-drm.xml')
+
+pkg.generate(
+  filebase : 'wayland-drm',
+  name : 'Mesa Wayland Protocols',
+  description : 'Mesa Wayland protocol files',
+  version : meson.project_version(),
+  variables : [
+     'datarootdir=${prefix}/' + get_option('datadir'),
+     'pkgdatadir=${pc_sysrootdir}${datarootdir}/' + meson.project_name(),
+  ],
+  install_dir : '@0@/@1@/pkgconfig'.format(get_option('prefix'),
+                get_option('datadir')),
+)
