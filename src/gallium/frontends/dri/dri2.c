@@ -2451,7 +2451,7 @@ dri_swrast_kms_init_screen(struct dri_screen *screen)
    if (!configs)
       goto fail;
 
-   screen->can_share_buffer = false;
+   screen->can_share_buffer = true;
    screen->auto_fake_front = dri_with_format(screen);
    screen->lookup_egl_image = dri2_lookup_egl_image;
 
