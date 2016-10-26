@@ -1894,7 +1894,7 @@ struct pipe_screen *
 dri_swrast_kms_init_screen(struct dri_screen *screen, bool driver_name_is_inferred)
 {
    struct pipe_screen *pscreen = NULL;
-   screen->can_share_buffer = false;
+   screen->can_share_buffer = true;
 
 #if defined(HAVE_DRISW_KMS) && defined(HAVE_SWRAST)
    if (pipe_loader_sw_probe_kms(&screen->dev, screen->fd))
