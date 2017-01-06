@@ -1208,6 +1208,11 @@ dri2_initialize(_EGLDisplay *disp)
    case _EGL_PLATFORM_ANDROID:
       ret = dri2_initialize_android(disp);
       break;
+#ifdef HAVE_TIZEN_PLATFORM
+   case _EGL_PLATFORM_TIZEN:
+      ret = dri2_initialize_tizen(disp);
+      break;
+#endif
    default:
       unreachable("Callers ensure we cannot get here.");
       return EGL_FALSE;
@@ -1282,6 +1287,12 @@ dri2_display_destroy(_EGLDisplay *disp)
    case _EGL_PLATFORM_WAYLAND:
       dri2_teardown_wayland(dri2_dpy);
       break;
+#ifdef HAVE_TIZEN_PLATFORM
+   case _EGL_PLATFORM_TIZEN:
+      if (dri2_dpy->tpl_dpy)
+         tpl_object_unreference((tpl_object_t *) dri2_dpy->tpl_dpy);
+      break;
+#endif
    default:
       /* TODO: add teardown for other platforms */
       break;
@@ -2322,8 +2333,96 @@ dri2_create_image_khr_renderbuffer(_EGLDisplay *disp, _EGLContext *ctx,
    return dri2_create_image_from_dri(disp, dri_image);
 }
 
-#ifdef HAVE_WAYLAND_PLATFORM
+#ifdef HAVE_TIZEN_PLATFORM
+int
+dri2_fourcc_from_tbm_format(tbm_format format)
+{
+   switch (format) {
+   case TBM_FORMAT_ARGB8888:
+      return DRM_FORMAT_ARGB8888;
+   case TBM_FORMAT_XRGB8888:
+      return DRM_FORMAT_XRGB8888;
+   case TBM_FORMAT_RGB565:
+      return DRM_FORMAT_RGB565;
+   default:
+      _eglLog(_EGL_DEBUG, "%s: unsupported tbm format %#x", __func__, format);
+      return 0;
+   }
+}
 
+static _EGLImage *
+dri2_create_image_wayland_wl_buffer_tizen(_EGLDisplay *disp, _EGLContext *ctx,
+                                          EGLClientBuffer _buffer,
+                                          const EGLint *attr_list)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   __DRIimage *dri_image;
+   _EGLImageAttribs attrs;
+   tbm_surface_h tbm_surf;
+   tbm_bo tbm_buf;
+   tbm_surface_info_s info;
+   int fourcc, fd, pitch, offset;
+
+   tbm_surf = tpl_display_get_buffer_from_native_pixmap(dri2_dpy->tpl_dpy,
+                                                        (tpl_handle_t) _buffer);
+   if (!tbm_surf) {
+      _eglError(EGL_BAD_PARAMETER, "tpl_display_get_buffer_from_native_pixmap");
+      return NULL;
+   }
+
+   if (!_eglParseImageAttribList(&attrs, disp, attr_list)) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_create_image_wayland_wl_buffer_tizen");
+      return NULL;
+   }
+
+   if (tbm_surface_get_info(tbm_surf, &info)) {
+      _eglError(EGL_BAD_PARAMETER, "tbm_surface_get_info");
+      return NULL;
+   }
+
+   if (info.num_planes > 1) {
+      _eglError(EGL_BAD_PARAMETER,
+                "dri2_create_image_wayland_wl_buffer_tizen (multi-plane format)");
+      return NULL;
+   }
+
+   if (attrs.PlaneWL < 0 || attrs.PlaneWL >= info.num_planes) {
+      _eglError(EGL_BAD_PARAMETER,
+                "dri2_create_image_wayland_wl_buffer_tizen (plane out of bounds)");
+      return NULL;
+   }
+
+   tbm_buf = tbm_surface_internal_get_bo(tbm_surf, attrs.PlaneWL);
+   if (!tbm_buf) {
+      _eglError(EGL_BAD_PARAMETER, "tbm_surface_internal_get_bo");
+      return NULL;
+   }
+
+   fourcc = dri2_fourcc_from_tbm_format(info.format);
+   pitch = info.planes[attrs.PlaneWL].stride;
+   offset = info.planes[attrs.PlaneWL].offset;
+   fd = tbm_bo_export_fd(tbm_buf);
+
+   dri_image = dri2_dpy->image->createImageFromFds(dri2_dpy->dri_screen,
+                                                   info.width,
+                                                   info.height,
+                                                   fourcc,
+                                                   &fd,
+                                                   1,
+                                                   &pitch,
+                                                   &offset,
+                                                   tbm_surf);
+   close(fd);
+   if (dri_image == NULL) {
+      _eglError(EGL_BAD_PARAMETER, "createImageFromFds");
+      return NULL;
+   }
+
+   return dri2_create_image_from_dri(disp, dri_image);
+}
+#endif
+
+#ifdef HAVE_WAYLAND_PLATFORM
 /* This structure describes how a wl_buffer maps to one or more
  * __DRIimages.  A wl_drm_buffer stores the wl_drm format code and the
  * offsets and strides of the planes in the buffer.  This table maps a
@@ -3217,6 +3316,10 @@ dri2_create_image_khr(_EGLDisplay *disp, _EGLContext *ctx, EGLenum target,
    case EGL_WAYLAND_BUFFER_WL:
       return dri2_create_image_wayland_wl_buffer(disp, ctx, buffer, attr_list);
 #endif
+#ifdef HAVE_TIZEN_PLATFORM
+   case EGL_WAYLAND_BUFFER_WL:
+      return dri2_create_image_wayland_wl_buffer_tizen(disp, ctx, buffer, attr_list);
+#endif
    case EGL_CL_IMAGE_IMG:
       return dri2_create_image_img_buffer(disp, ctx, target, buffer, attr_list);
    default:
@@ -3236,6 +3339,78 @@ dri2_destroy_image_khr(_EGLDisplay *disp, _EGLImage *image)
 
    return EGL_TRUE;
 }
+
+#ifdef HAVE_TIZEN_PLATFORM
+
+static EGLint get_texture_format_from_gbm_format(tbm_format format)
+{
+   switch (format) {
+   case TBM_FORMAT_ARGB8888:
+      return EGL_TEXTURE_RGBA;
+   default:
+      _eglLog(_EGL_DEBUG, "%s: unsupported tbm format %#x", __func__, format);
+      return 0;
+   }
+}
+
+static EGLBoolean
+dri2_bind_wayland_display_wl_tizen(_EGLDisplay *disp, struct wl_display *wl_dpy)
+{
+   (void) disp;
+   (void) wl_dpy;
+
+   return EGL_TRUE;
+}
+
+static EGLBoolean
+dri2_unbind_wayland_display_wl_tizen(_EGLDisplay *disp,
+                                     struct wl_display *wl_dpy)
+{
+   (void) disp;
+   (void) wl_dpy;
+
+   return EGL_TRUE;
+}
+
+static EGLBoolean
+dri2_query_wayland_buffer_wl_tizen(_EGLDisplay *disp,
+                                   struct wl_resource *buffer_resource,
+                                   EGLint attribute, EGLint *value)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   tpl_handle_t pixmap = (tpl_handle_t) buffer_resource;
+   tbm_surface_h tbm_surf;
+   tbm_format format;
+   EGLint tex_format;
+
+   tbm_surf = tpl_display_get_buffer_from_native_pixmap(dri2_dpy->tpl_dpy,
+                                                        pixmap);
+   if (!tbm_surf)
+      return EGL_FALSE;
+
+   switch (attribute) {
+   case EGL_TEXTURE_FORMAT:
+      format = tbm_surface_get_format(tbm_surf);
+      tex_format = get_texture_format_from_gbm_format(format);
+      if (!tex_format)
+         return EGL_FALSE;
+
+      *value = tex_format;
+      break;
+   case EGL_WIDTH:
+      *value = tbm_surface_get_width(tbm_surf);
+      break;
+   case EGL_HEIGHT:
+      *value = tbm_surface_get_height(tbm_surf);
+      break;
+   default:
+      return EGL_FALSE;
+   }
+
+   return EGL_TRUE;
+}
+
+#endif
 
 #ifdef HAVE_WAYLAND_PLATFORM
 
@@ -3767,6 +3942,11 @@ const _EGLDriver _eglDriver = {
    .BindWaylandDisplayWL = dri2_bind_wayland_display_wl,
    .UnbindWaylandDisplayWL = dri2_unbind_wayland_display_wl,
    .QueryWaylandBufferWL = dri2_query_wayland_buffer_wl,
+#endif
+#ifdef HAVE_TIZEN_PLATFORM
+   .BindWaylandDisplayWL = dri2_bind_wayland_display_wl_tizen,
+   .UnbindWaylandDisplayWL = dri2_unbind_wayland_display_wl_tizen,
+   .QueryWaylandBufferWL = dri2_query_wayland_buffer_wl_tizen,
 #endif
    .GetSyncValuesCHROMIUM = dri2_get_sync_values_chromium,
    .CreateSyncKHR = dri2_create_sync,

@@ -416,6 +416,13 @@ _eglGetPlatformDisplayCommon(EGLenum platform, void *native_display,
    case EGL_PLATFORM_DEVICE_EXT:
       disp = _eglGetDeviceDisplay(native_display, attrib_list);
       break;
+#ifdef HAVE_TIZEN_PLATFORM
+   case EGL_PLATFORM_GBM_MESA:
+   case EGL_PLATFORM_WAYLAND_EXT:
+      disp = _eglGetTizenDisplay((struct gbm_device*) native_display,
+                                attrib_list);
+      break;
+#endif
    default:
       RETURN_EGL_ERROR(NULL, EGL_BAD_PARAMETER, NULL);
    }

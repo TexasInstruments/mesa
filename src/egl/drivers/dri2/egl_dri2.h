@@ -62,12 +62,18 @@ struct zwp_linux_dmabuf_v1;
 #include <gbm_driint.h>
 #endif
 
-#ifdef HAVE_ANDROID_PLATFORM
 #define LOG_TAG "EGL-DRI2"
 
+#ifdef HAVE_ANDROID_PLATFORM
 #include <system/window.h>
 #include <hardware/gralloc.h>
 #endif /* HAVE_ANDROID_PLATFORM */
+
+#ifdef HAVE_TIZEN_PLATFORM
+#include <pthread.h>
+#include <tpl.h>
+#include <tbm_surface_internal.h>
+#endif
 
 #include "eglconfig.h"
 #include "eglcontext.h"
@@ -251,6 +257,10 @@ struct dri2_egl_display
 
    bool                      is_render_node;
    bool                      is_different_gpu;
+
+#ifdef HAVE_TIZEN_PLATFORM
+   tpl_display_t            *tpl_dpy;
+#endif
 };
 
 struct dri2_egl_context
@@ -265,6 +275,18 @@ enum wayland_buffer_type {
    WL_BUFFER_BACK,
    WL_BUFFER_THIRD,
    WL_BUFFER_COUNT
+};
+#endif
+
+#define DRI2_SURFACE_NUM_COLOR_BUFFERS 4
+
+#ifdef HAVE_TIZEN_PLATFORM
+struct tpl_swap_queue_elem
+{
+   tbm_surface_h       tbm_surf;
+   EGLint             *rects;
+   EGLint              n_rects_max;
+   EGLint              n_rects;
 };
 #endif
 
@@ -300,15 +322,33 @@ struct dri2_egl_surface
    struct gbm_dri_surface *gbm_surf;
 #endif
 
+#ifdef HAVE_TIZEN_PLATFORM
+   tpl_surface_t         *tpl_surf;
+   bool                   reset;
+   /*
+    * Protects swap_queue_idx_head, swap_queue_idx_tail and
+    * color_buffers.locked.
+    */
+   pthread_mutex_t        mutex;
+   pthread_cond_t         swap_queue_cond;
+   struct tpl_swap_queue_elem swap_queue[DRI2_SURFACE_NUM_COLOR_BUFFERS];
+   int                    swap_queue_idx_head;
+   int                    swap_queue_idx_tail;
+   pthread_t              swap_queue_processor;
+#endif
+
    /* EGL-owned buffers */
    __DRIbuffer           *local_buffers[__DRI_BUFFER_COUNT];
 
-#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM)
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM) || \
+    defined(HAVE_TIZEN_PLATFORM)
    struct {
+#if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_TIZEN_PLATFORM)
+      __DRIimage         *dri_image;
+#endif
 #ifdef HAVE_WAYLAND_PLATFORM
       struct wl_buffer   *wl_buffer;
       bool                wl_release;
-      __DRIimage         *dri_image;
       /* for is_different_gpu case. NULL else */
       __DRIimage         *linear_copy;
       /* for swrast */
@@ -317,6 +357,9 @@ struct dri2_egl_surface
 #endif
 #ifdef HAVE_DRM_PLATFORM
       struct gbm_bo       *bo;
+#endif
+#ifdef HAVE_TIZEN_PLATFORM
+      tbm_surface_h       tbm_surf;
 #endif
       bool                locked;
       int                 age;
@@ -516,6 +559,11 @@ dri2_initialize_android(_EGLDisplay *disp)
 EGLBoolean
 dri2_initialize_surfaceless(_EGLDisplay *disp);
 
+#ifdef HAVE_TIZEN_PLATFORM
+EGLBoolean
+dri2_initialize_tizen(_EGLDisplay *disp);
+#endif
+
 EGLBoolean
 dri2_initialize_device(_EGLDisplay *disp);
 static inline void
@@ -549,6 +597,11 @@ dri2_set_WL_bind_wayland_display(_EGLDisplay *disp)
    }
 #endif
 }
+
+#ifdef HAVE_TIZEN_PLATFORM
+int
+dri2_fourcc_from_tbm_format(tbm_format format);
+#endif
 
 void
 dri2_display_destroy(_EGLDisplay *disp);

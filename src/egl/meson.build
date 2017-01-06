@@ -106,7 +106,9 @@ if with_dri2
     deps_for_egl += [dep_x11_xcb, dep_xcb_dri2, dep_xcb_xfixes]
   endif
   if with_gbm
-    files_egl += files('drivers/dri2/platform_drm.c')
+    if not with_platform_tizen
+      files_egl += files('drivers/dri2/platform_drm.c')
+    endif
     link_for_egl += libgbm
     incs_for_egl += [inc_gbm, include_directories('../gbm/main')]
     deps_for_egl += dep_libdrm
@@ -134,6 +136,11 @@ elif with_platform_haiku
   files_egl += files('drivers/haiku/egl_haiku.cpp')
   link_for_egl += libgl
   deps_for_egl += cpp.find_library('be')
+endif
+if with_platform_tizen
+  files_egl += files('drivers/dri2/platform_tizen.c')
+  incs_for_egl += [inc_loader]
+  deps_for_egl += [dep_tizen, dep_libdrm]
 endif
 
 if cc.has_function('mincore')

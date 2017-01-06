@@ -346,6 +346,11 @@ with_platform_x11 = _platforms.contains('x11')
 with_platform_wayland = _platforms.contains('wayland')
 with_platform_haiku = _platforms.contains('haiku')
 with_platform_windows = _platforms.contains('windows')
+with_platform_tizen = _platforms.contains('tizen')
+
+if with_platform_tizen and _platforms.length() != 1
+  error('tizen cannot be enabled at the same time as other platforms')
+endif
 
 if _platforms.length() != 0
   egl_native_platform = _platforms[0]
@@ -859,7 +864,7 @@ else
   pre_args += '-DEGL_NO_X11'
   gl_pkgconfig_c_flags += '-DEGL_NO_X11'
 endif
-if with_gbm
+if with_gbm and not with_platform_tizen
   pre_args += '-DHAVE_DRM_PLATFORM'
 endif
 
@@ -888,6 +893,15 @@ if with_platform_android
 endif
 if with_platform_haiku
   pre_args += '-DHAVE_HAIKU_PLATFORM'
+endif
+if with_platform_tizen
+  dep_dlog = dependency('dlog')
+  dep_tizen = [
+    dep_dlog,
+    dependency('libtbm'),
+    dependency('tpl-egl'),
+  ]
+  pre_args += '-DHAVE_TIZEN_PLATFORM'
 endif
 
 prog_python = import('python').find_installation('python3')
@@ -1487,7 +1501,8 @@ with_gallium_drisw_kms = false
 dep_libdrm = dependency(
   'libdrm', version : '>=' + _drm_ver,
   # GNU/Hurd includes egl_dri2, without drm.
-  required : (with_dri2 and host_machine.system() != 'gnu') or with_dri3
+  required : (with_dri2 and host_machine.system() != 'gnu') or with_dri3 or
+             with_platform_tizen
 )
 if dep_libdrm.found()
   pre_args += '-DHAVE_LIBDRM'
@@ -2028,9 +2043,11 @@ if with_egl
 endif
 lines += 'GBM:             ' + (with_gbm ? 'yes' : 'no')
 if with_egl or with_any_vk
-  _platforms += 'surfaceless'
-  if with_gbm
-    _platforms += 'drm'
+  if not with_platform_tizen
+    _platforms += 'surfaceless'
+    if with_gbm
+      _platforms += 'drm'
+    endif
   endif
   lines += 'EGL/Vulkan/VL platforms:   ' + ' '.join(_platforms)
 endif

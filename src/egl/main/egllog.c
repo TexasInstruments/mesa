@@ -46,15 +46,17 @@
 
 #include "egllog.h"
 
-#ifdef HAVE_ANDROID_PLATFORM
 #define LOG_TAG "EGL-MAIN"
+
+#ifdef HAVE_ANDROID_PLATFORM
 #if ANDROID_API_LEVEL >= 26
 #include <log/log.h>
 #else
 #include <cutils/log.h>
 #endif /* use log/log.h start from android 8 major version */
-
-#endif /* HAVE_ANDROID_PLATFORM */
+#elif defined(HAVE_TIZEN_PLATFORM)
+#include <dlog.h>
+#endif /* HAVE_TIZEN_PLATFORM */
 
 #define MAXSTRING 1000
 #define FALLBACK_LOG_LEVEL _EGL_WARNING
@@ -93,9 +95,26 @@ _eglDefaultLogger(EGLint level, const char *msg)
       [_EGL_DEBUG] = ANDROID_LOG_DEBUG,
    };
    LOG_PRI(egl2alog[level], LOG_TAG, "%s", msg);
+#elif defined(HAVE_TIZEN_PLATFORM)
+   switch (level) {
+   case _EGL_DEBUG:
+      LOGD("%s", msg);
+      break;
+   case _EGL_INFO:
+      LOGI("%s", msg);
+      break;
+   case _EGL_WARNING:
+      LOGW("%s", msg);
+      break;
+   case _EGL_FATAL:
+      LOGF("%s", msg);
+      break;
+   default:
+      break;
+   }
 #else
    fprintf(stderr, "libEGL %s: %s\n", level_strings[level], msg);
-#endif /* HAVE_ANDROID_PLATFORM */
+#endif /* HAVE_TIZEN_PLATFORM */
 }
 
 

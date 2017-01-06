@@ -52,6 +52,7 @@ enum _egl_platform_type {
    _EGL_PLATFORM_HAIKU,
    _EGL_PLATFORM_SURFACELESS,
    _EGL_PLATFORM_DEVICE,
+   _EGL_PLATFORM_TIZEN,
 
    _EGL_NUM_PLATFORMS,
    _EGL_INVALID_PLATFORM = -1
@@ -327,6 +328,12 @@ _eglGetSurfacelessDisplay(void *native_display,
 _EGLDisplay*
 _eglGetAndroidDisplay(void *native_display,
                          const EGLAttrib *attrib_list);
+#endif
+
+#ifdef HAVE_TIZEN_PLATFORM
+_EGLDisplay*
+_eglGetTizenDisplay(void *native_display,
+                    const EGLint *attrib_list);
 #endif
 
 _EGLDisplay*

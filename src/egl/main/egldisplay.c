@@ -77,6 +77,7 @@ static const struct {
    { _EGL_PLATFORM_HAIKU, "haiku" },
    { _EGL_PLATFORM_SURFACELESS, "surfaceless" },
    { _EGL_PLATFORM_DEVICE, "device" },
+   { _EGL_PLATFORM_TIZEN, "tizen" },
 };
 
 
@@ -107,6 +108,17 @@ _eglGetNativePlatformFromEnv(void)
       }
    }
 
+#ifdef HAVE_TIZEN_PLATFORM
+   switch (plat) {
+   case _EGL_PLATFORM_DRM:
+   case _EGL_PLATFORM_WAYLAND:
+      plat = _EGL_PLATFORM_TIZEN;
+      break;
+   default:
+      break;
+   }
+#endif
+
    if (plat == _EGL_INVALID_PLATFORM)
       _eglLog(_EGL_WARNING, "invalid EGL_PLATFORM given");
 
@@ -120,6 +132,7 @@ _eglGetNativePlatformFromEnv(void)
 static _EGLPlatformType
 _eglNativePlatformDetectNativeDisplay(void *nativeDisplay)
 {
+#ifndef HAVE_TIZEN_PLATFORM
    if (nativeDisplay == EGL_DEFAULT_DISPLAY)
       return _EGL_INVALID_PLATFORM;
 
@@ -141,7 +154,7 @@ _eglNativePlatformDetectNativeDisplay(void *nativeDisplay)
          return _EGL_PLATFORM_DRM;
 #endif
    }
-
+#endif
    return _EGL_INVALID_PLATFORM;
 }
 
@@ -594,6 +607,23 @@ _eglGetAndroidDisplay(void *native_display,
                           attrib_list);
 }
 #endif /* HAVE_ANDROID_PLATFORM */
+
+#ifdef HAVE_TIZEN_PLATFORM
+_EGLDisplay*
+_eglGetTizenDisplay(void *native_display,
+                    const EGLint *attrib_list)
+{
+   /* EGL_MESA_platform_gbm and EGL_EXT_platform_wayland recognizes no
+    * attributes. */
+   if (attrib_list != NULL && attrib_list[0] != EGL_NONE) {
+      _eglError(EGL_BAD_ATTRIBUTE, "eglGetPlatformDisplay");
+      return NULL;
+   }
+
+   return _eglFindDisplay(_EGL_PLATFORM_TIZEN, native_display,
+                          attrib_list);
+}
+#endif /* HAVE_TIZEN_PLATFORM */
 
 _EGLDisplay*
 _eglGetDeviceDisplay(void *native_display,
