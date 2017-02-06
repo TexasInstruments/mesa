@@ -58,6 +58,10 @@
 #include "X11/Xlibint.h"
 #endif
 
+#ifdef HAVE_TIZEN_PLATFORM
+#include <tpl.h>
+#endif
+
 #include "egldefines.h"
 #include "egl_dri2.h"
 #include "GL/mesa_glinterop.h"
@@ -2340,14 +2344,104 @@ dri2_fourcc_from_tbm_format(tbm_format format)
    switch (format) {
    case TBM_FORMAT_ARGB8888:
       return DRM_FORMAT_ARGB8888;
+   case TBM_FORMAT_ABGR8888:
+      return DRM_FORMAT_ABGR8888;
    case TBM_FORMAT_XRGB8888:
       return DRM_FORMAT_XRGB8888;
+   case TBM_FORMAT_XBGR8888:
+      return DRM_FORMAT_XBGR8888;
+   case TBM_FORMAT_ARGB4444:
+      return DRM_FORMAT_ARGB4444;
+   case TBM_FORMAT_ARGB1555:
+      return DRM_FORMAT_ARGB1555;
    case TBM_FORMAT_RGB565:
       return DRM_FORMAT_RGB565;
+   case TBM_FORMAT_YUV420:
+      return DRM_FORMAT_YUV420;
+   case TBM_FORMAT_YVU420:
+      return DRM_FORMAT_YVU420;
+   case TBM_FORMAT_NV12:
+      return DRM_FORMAT_NV12;
+   case TBM_FORMAT_NV21:
+      return DRM_FORMAT_NV21;
    default:
       _eglLog(_EGL_DEBUG, "%s: unsupported tbm format %#x", __func__, format);
       return 0;
    }
+}
+
+static _EGLImage *
+dri2_create_image_tbm_surface(_EGLDisplay *disp, _EGLContext *ctx,
+                              tbm_surface_h tbm_surf)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   __DRIimage *dri_image;
+   tbm_surface_info_s info;
+   int fd[TBM_SURF_PLANE_MAX], pitch[TBM_SURF_PLANE_MAX], offset[TBM_SURF_PLANE_MAX];
+   int fourcc;
+   int i;
+
+   if (tbm_surface_get_info(tbm_surf, &info)) {
+      _eglError(EGL_BAD_PARAMETER, "tbm_surface_get_info");
+      return NULL;
+   }
+
+   fourcc = dri2_fourcc_from_tbm_format(info.format);
+   if (!fourcc) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_fourcc_from_tbm_format");
+      return NULL;
+   }
+
+   for (i = 0; i < info.num_planes; i++) {
+      tbm_bo tbm_buf;
+
+      tbm_buf = tbm_surface_internal_get_bo(tbm_surf, i);
+      if (!tbm_buf) {
+         _eglError(EGL_BAD_PARAMETER, "tbm_surface_internal_get_bo");
+         goto fail_close;
+      }
+
+      pitch[i] = info.planes[i].stride;
+      offset[i] = info.planes[i].offset;
+      fd[i] = tbm_bo_export_fd(tbm_buf);
+   }
+
+   dri_image = dri2_dpy->image->createImageFromFds(dri2_dpy->dri_screen,
+                                                   info.width,
+                                                   info.height,
+                                                   fourcc,
+                                                   &fd[0],
+                                                   info.num_planes,
+                                                   &pitch[0],
+                                                   &offset[0],
+                                                   tbm_surf);
+   for (i = 0; i < info.num_planes; i++) {
+      close(fd[i]);
+      fd[i] = -1;
+   }
+
+   if (!dri_image) {
+      _eglError(EGL_BAD_PARAMETER, "createImageFromFds");
+      return NULL;
+   }
+
+   return dri2_create_image_from_dri(disp, dri_image);
+
+fail_close:
+   while (i--)
+      close(fd[i]);
+
+   return NULL;
+}
+
+static _EGLImage *
+dri2_create_image_tizen(_EGLDisplay *disp, _EGLContext *ctx,
+                        EGLClientBuffer _buffer,
+                        const EGLint *attr_list)
+{
+   tbm_surface_h tbm_surf = (tbm_surface_h)_buffer;
+
+   return dri2_create_image_tbm_surface(disp, ctx, tbm_surf);
 }
 
 static _EGLImage *
@@ -2356,12 +2450,9 @@ dri2_create_image_wayland_wl_buffer_tizen(_EGLDisplay *disp, _EGLContext *ctx,
                                           const EGLint *attr_list)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
-   __DRIimage *dri_image;
    _EGLImageAttribs attrs;
    tbm_surface_h tbm_surf;
-   tbm_bo tbm_buf;
    tbm_surface_info_s info;
-   int fourcc, fd, pitch, offset;
 
    tbm_surf = tpl_display_get_buffer_from_native_pixmap(dri2_dpy->tpl_dpy,
                                                         (tpl_handle_t) _buffer);
@@ -2392,33 +2483,7 @@ dri2_create_image_wayland_wl_buffer_tizen(_EGLDisplay *disp, _EGLContext *ctx,
       return NULL;
    }
 
-   tbm_buf = tbm_surface_internal_get_bo(tbm_surf, attrs.PlaneWL);
-   if (!tbm_buf) {
-      _eglError(EGL_BAD_PARAMETER, "tbm_surface_internal_get_bo");
-      return NULL;
-   }
-
-   fourcc = dri2_fourcc_from_tbm_format(info.format);
-   pitch = info.planes[attrs.PlaneWL].stride;
-   offset = info.planes[attrs.PlaneWL].offset;
-   fd = tbm_bo_export_fd(tbm_buf);
-
-   dri_image = dri2_dpy->image->createImageFromFds(dri2_dpy->dri_screen,
-                                                   info.width,
-                                                   info.height,
-                                                   fourcc,
-                                                   &fd,
-                                                   1,
-                                                   &pitch,
-                                                   &offset,
-                                                   tbm_surf);
-   close(fd);
-   if (dri_image == NULL) {
-      _eglError(EGL_BAD_PARAMETER, "createImageFromFds");
-      return NULL;
-   }
-
-   return dri2_create_image_from_dri(disp, dri_image);
+   return dri2_create_image_tbm_surface(disp, ctx, tbm_surf);
 }
 #endif
 
@@ -3319,6 +3384,8 @@ dri2_create_image_khr(_EGLDisplay *disp, _EGLContext *ctx, EGLenum target,
 #ifdef HAVE_TIZEN_PLATFORM
    case EGL_WAYLAND_BUFFER_WL:
       return dri2_create_image_wayland_wl_buffer_tizen(disp, ctx, buffer, attr_list);
+   case EGL_NATIVE_SURFACE_TIZEN:
+      return dri2_create_image_tizen(disp, ctx, buffer, attr_list);
 #endif
    case EGL_CL_IMAGE_IMG:
       return dri2_create_image_img_buffer(disp, ctx, target, buffer, attr_list);

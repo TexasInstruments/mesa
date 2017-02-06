@@ -965,6 +965,7 @@ dri2_initialize_tizen(_EGLDisplay *dpy)
    dpy->Extensions.EXT_swap_buffers_with_damage = EGL_TRUE;
    dpy->Extensions.KHR_image_base = EGL_TRUE;
    dpy->Extensions.WL_bind_wayland_display = EGL_TRUE;
+   dpy->Extensions.TIZEN_image_native_surface = EGL_TRUE;
 
    /*
     * Fill vtbl last to prevent accidentally calling virtual function during

@@ -149,6 +149,8 @@ struct _egl_extensions
 
    EGLBoolean NV_post_sub_buffer;
 
+   EGLBoolean TIZEN_image_native_surface;
+
    EGLBoolean WL_bind_wayland_display;
    EGLBoolean WL_create_wayland_buffer_from_image;
 
