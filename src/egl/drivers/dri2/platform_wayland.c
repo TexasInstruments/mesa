@@ -875,6 +875,102 @@ dri2_wl_create_pixmap_surface(_EGLDisplay *disp, _EGLConfig *conf,
    return NULL;
 }
 
+static _EGLSurface *
+dri2_wl_create_pbuffer_surface(_EGLDisplay *disp, _EGLConfig *conf,
+                               const EGLint *attrib_list)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri2_egl_config *dri2_conf = dri2_egl_config(conf);
+   struct dri2_egl_surface *dri2_surf;
+   int visual_idx;
+   const struct dri_config *config;
+
+   dri2_surf = calloc(1, sizeof *dri2_surf);
+   if (!dri2_surf) {
+      _eglError(EGL_BAD_ALLOC, "dri2_create_surface");
+      return NULL;
+   }
+
+   if (!dri2_init_surface(&dri2_surf->base, disp, EGL_PBUFFER_BIT, conf,
+                          attrib_list, false, NULL))
+      goto cleanup_surf;
+
+   config = dri2_get_dri_config(dri2_conf, EGL_PBUFFER_BIT,
+                                dri2_surf->base.GLColorspace);
+   if (!config) {
+      _eglError(EGL_BAD_MATCH, "Unsupported surfacetype/colorspace configuration");
+      goto cleanup_surf;
+   }
+
+   visual_idx = dri2_wl_visual_idx_from_config(config);
+   assert(visual_idx != -1);
+
+   if (dri2_dpy->wl_dmabuf
+#ifdef HAVE_BIND_WL_DISPLAY
+   || dri2_dpy->wl_drm
+#endif
+   ) {
+      dri2_surf->format = dri2_wl_visuals[visual_idx].wl_drm_format;
+   } else {
+      assert(dri2_dpy->wl_shm);
+      dri2_surf->format = dri2_wl_shm_format_from_visual_idx(visual_idx);
+   }
+
+   if (!dri2_create_drawable(dri2_dpy, config, dri2_surf, dri2_surf))
+       goto cleanup_surf;
+
+   return &dri2_surf->base;
+
+ cleanup_surf:
+   free(dri2_surf);
+
+   return NULL;
+}
+
+static int
+allocate_front_buffer(struct dri2_egl_surface *dri2_surf)
+{
+   int visual_idx;
+   int pipe_format;
+
+   visual_idx = dri2_wl_visual_idx_from_fourcc(dri2_surf->format);
+   assert(visual_idx != -1);
+   pipe_format = dri2_wl_visuals[visual_idx].pipe_format;
+
+   if (!dri2_surf->front) {
+      struct dri2_egl_display *dri2_dpy =
+         dri2_egl_display(dri2_surf->base.Resource.Display);
+
+      dri2_surf->front = dri_create_image(dri2_dpy->dri_screen_render_gpu,
+                                          dri2_surf->base.Width,
+                                          dri2_surf->base.Height,
+                                          pipe_format,
+                                          NULL, 0, 0, NULL);
+      if (!dri2_surf->front) {
+         _eglError(EGL_BAD_ALLOC, "failed to allocate front buffer");
+         return -1;
+      }
+   }
+
+   return 0;
+}
+
+static void
+free_front_buffer(struct dri2_egl_surface *dri2_surf)
+{
+   if (dri2_surf->front) {
+      dri2_destroy_image(dri2_surf->front);
+      dri2_surf->front = NULL;
+   }
+}
+
+static void
+swrast_free_front_buffer(struct dri2_egl_surface *dri2_surf)
+{
+   free(dri2_surf->swrast_front);
+   dri2_surf->swrast_front = NULL;
+}
+
 /**
  * Called via eglDestroySurface(), drv->DestroySurface().
  */
@@ -897,6 +993,9 @@ dri2_wl_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
                 dri2_surf->color_buffers[i].data_size);
    }
 
+   free_front_buffer(dri2_surf);
+   swrast_free_front_buffer(dri2_surf);
+
    if (dri2_surf->throttle_callback)
       wl_callback_destroy(dri2_surf->throttle_callback);
 
@@ -909,7 +1008,8 @@ dri2_wl_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
    loader_wayland_presentation_destroy(&dri2_surf->wayland_presentation);
 
    loader_wayland_surface_destroy(&dri2_surf->wayland_surface);
-   wl_proxy_wrapper_destroy(dri2_surf->wl_dpy_wrapper);
+   if (dri2_surf->wl_dpy_wrapper)
+      wl_proxy_wrapper_destroy(dri2_surf->wl_dpy_wrapper);
 #ifdef HAVE_BIND_WL_DISPLAY
    if (dri2_surf->wl_drm_wrapper)
       wl_proxy_wrapper_destroy(dri2_surf->wl_drm_wrapper);
@@ -919,7 +1019,8 @@ dri2_wl_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
       dmabuf_feedback_fini(&dri2_surf->dmabuf_feedback);
       dmabuf_feedback_fini(&dri2_surf->pending_dmabuf_feedback);
    }
-   wl_event_queue_destroy(dri2_surf->wl_queue);
+   if (dri2_surf->wl_queue)
+      wl_event_queue_destroy(dri2_surf->wl_queue);
 
    dri2_fini_surface(surf);
    free(surf);
@@ -1509,11 +1610,27 @@ image_get_buffers(struct dri_drawable *driDrawable, unsigned int format,
 
    MESA_TRACE_FUNC_FLOW(&flow);
 
-   if (update_buffers_if_needed(dri2_surf, &flow) < 0)
-      return 0;
+   buffers->image_mask = 0;
+   buffers->front = NULL;
+   buffers->back = NULL;
 
-   buffers->image_mask = __DRI_IMAGE_BUFFER_BACK;
-   buffers->back = dri2_surf->back->dri_image;
+   if (buffer_mask & __DRI_IMAGE_BUFFER_BACK)
+   {
+      if (update_buffers_if_needed(dri2_surf, &flow) < 0)
+         return 0;
+
+      buffers->image_mask |= __DRI_IMAGE_BUFFER_BACK;
+      buffers->back = dri2_surf->back->dri_image;
+   }
+
+   if (buffer_mask & __DRI_IMAGE_BUFFER_FRONT)
+   {
+      if (allocate_front_buffer(dri2_surf) < 0)
+         return 0;
+
+      buffers->image_mask |= __DRI_IMAGE_BUFFER_FRONT;
+      buffers->front = dri2_surf->front;
+   }
 
    return 1;
 }
@@ -1750,6 +1867,9 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
    struct mesa_trace_flow flow = { 0 };
 
+   if (draw->Type != EGL_WINDOW_BIT)
+      return EGL_TRUE;
+
    if (!dri2_surf->wl_win)
       return _eglError(EGL_BAD_NATIVE_WINDOW, "dri2_swap_buffers");
 
@@ -1874,6 +1994,9 @@ dri2_wl_query_buffer_age(_EGLDisplay *disp, _EGLSurface *surface)
    struct mesa_trace_flow flow = { 0 };
 
    MESA_TRACE_FUNC_FLOW(&flow);
+
+   if (surface->Type != EGL_WINDOW_BIT)
+      return 0;
 
    if (update_buffers_if_needed(dri2_surf, &flow) < 0) {
       _eglError(EGL_BAD_ALLOC, "dri2_query_buffer_age");
@@ -2260,6 +2383,7 @@ static const struct dri2_egl_display_vtbl dri2_wl_display_vtbl = {
 #endif
    .create_window_surface = dri2_wl_create_window_surface,
    .create_pixmap_surface = dri2_wl_create_pixmap_surface,
+   .create_pbuffer_surface = dri2_wl_create_pbuffer_surface,
    .destroy_surface = dri2_wl_destroy_surface,
    .swap_interval = dri2_wl_swap_interval,
    .create_image = dri2_create_image_khr,
@@ -2483,7 +2607,7 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
 
       /* The format is supported one way or another; add the EGLConfig */
       dri2_conf = dri2_add_config(disp, dri2_dpy->driver_configs[i],
-                                  EGL_WINDOW_BIT, attr_list);
+                                  EGL_WINDOW_BIT | EGL_PBUFFER_BIT, attr_list);
       if (!dri2_conf)
          continue;
 
@@ -2687,6 +2811,23 @@ dri2_wl_swrast_get_stride_for_format(int format, int w)
 }
 
 static EGLBoolean
+swrast_allocate_local_buffer(int format, int w, int h, void **data)
+{
+   int stride, size_map;
+   void *data_map;
+
+   stride = dri2_wl_swrast_get_stride_for_format(format, w);
+   size_map = h * stride;
+
+   data_map = malloc(size_map);
+   if (!data_map)
+      return EGL_FALSE;
+
+   *data = data_map;
+   return EGL_TRUE;
+}
+
+static EGLBoolean
 dri2_wl_swrast_allocate_buffer(struct dri2_egl_surface *dri2_surf, int format,
                                int w, int h, void **data, int *size,
                                struct wl_buffer **buffer)
@@ -2806,8 +2947,24 @@ swrast_update_buffers(struct dri2_egl_surface *dri2_surf)
    return 0;
 }
 
+static int
+swrast_allocate_front_buffer(struct dri2_egl_surface *dri2_surf)
+{
+   if (!dri2_surf->swrast_front) {
+      if (!swrast_allocate_local_buffer(dri2_surf->format,
+                                        dri2_surf->base.Width,
+                                        dri2_surf->base.Height,
+                                        &dri2_surf->swrast_front)) {
+         _eglError(EGL_BAD_ALLOC, "failed to allocate front buffer");
+         return -1;
+      }
+   }
+
+   return 0;
+}
+
 static void *
-dri2_wl_swrast_get_frontbuffer_data(struct dri2_egl_surface *dri2_surf)
+dri2_wl_swrast_get_currentbuffer_data(struct dri2_egl_surface *dri2_surf)
 {
    /* if there has been a resize: */
    if (!dri2_surf->current)
@@ -2856,7 +3013,9 @@ dri2_wl_swrast_get_drawable_info(struct dri_drawable *draw, int *x, int *y, int 
 {
    struct dri2_egl_surface *dri2_surf = loaderPrivate;
 
-   (void)swrast_update_buffers(dri2_surf);
+   if (dri2_surf->base.Type == EGL_WINDOW_BIT)
+      (void)swrast_update_buffers(dri2_surf);
+
    *x = 0;
    *y = 0;
    *w = dri2_surf->base.Width;
@@ -2875,7 +3034,10 @@ dri2_wl_swrast_get_image(struct dri_drawable *read, int x, int y, int w, int h,
    int dst_stride = copy_width;
    char *src, *dst;
 
-   src = dri2_wl_swrast_get_frontbuffer_data(dri2_surf);
+   if (dri2_surf->base.Type == EGL_WINDOW_BIT)
+     src = dri2_wl_swrast_get_currentbuffer_data(dri2_surf);
+   else
+     src = dri2_surf->swrast_front;
    /* this is already the most up-to-date buffer */
    if (src == data)
       return;
@@ -2918,7 +3080,13 @@ dri2_wl_swrast_put_image2(struct dri_drawable *draw, int op, int x, int y, int w
 
    assert(copy_width <= stride);
 
-   dst = dri2_wl_swrast_get_backbuffer_data(dri2_surf);
+   if (dri2_surf->base.Type == EGL_WINDOW_BIT) {
+      dst = dri2_wl_swrast_get_backbuffer_data(dri2_surf);
+   } else {
+      (void)swrast_allocate_front_buffer(dri2_surf);
+      dst = dri2_surf->swrast_front;
+      assert(dst);
+   }
 
    dst += x_offset;
    dst += y * dst_stride;
@@ -3058,6 +3226,7 @@ static const struct dri2_egl_display_vtbl dri2_wl_swrast_display_vtbl = {
    .authenticate = NULL,
    .create_window_surface = dri2_wl_create_window_surface,
    .create_pixmap_surface = dri2_wl_create_pixmap_surface,
+   .create_pbuffer_surface = dri2_wl_create_pbuffer_surface,
    .destroy_surface = dri2_wl_destroy_surface,
    .swap_interval = dri2_wl_swap_interval,
    .create_image = dri2_create_image_khr,

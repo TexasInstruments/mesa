@@ -389,6 +389,10 @@ struct dri2_egl_surface {
    struct dri_image *front;
    enum pipe_format visual;
 
+#ifdef HAVE_WAYLAND_PLATFORM
+   void                 *swrast_front;
+#endif
+
    int out_fence_fd;
    EGLBoolean enable_out_fence;
 
