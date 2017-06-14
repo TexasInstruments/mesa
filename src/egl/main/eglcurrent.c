@@ -43,6 +43,7 @@ static mtx_t _egl_TSDMutex = _MTX_INITIALIZER_NP;
 static EGLBoolean _egl_TSDInitialized;
 static tss_t _egl_TSD;
 static void _eglDestroyThreadInfo(_EGLThreadInfo *t);
+static void _eglDestroyThreadInfoCallback(_EGLThreadInfo *t);
 
 #ifdef USE_ELF_TLS
 static __thread const _EGLThreadInfo *_egl_TLS
@@ -86,7 +87,7 @@ static inline EGLBoolean _eglInitTSD()
 
       /* check again after acquiring lock */
       if (!_egl_TSDInitialized) {
-         if (tss_create(&_egl_TSD, (void (*)(void *)) _eglDestroyThreadInfo) != thrd_success) {
+         if (tss_create(&_egl_TSD, (void (*)(void *)) _eglDestroyThreadInfoCallback) != thrd_success) {
             mtx_unlock(&_egl_TSDMutex);
             return EGL_FALSE;
          }
@@ -132,6 +133,30 @@ _eglDestroyThreadInfo(_EGLThreadInfo *t)
 {
    if (t != &dummy_thread)
       free(t);
+}
+
+
+/**
+ * Delete/free a _EGLThreadInfo object.
+ */
+static void
+_eglDestroyThreadInfoCallback(_EGLThreadInfo *t)
+{
+   /* If this callback is called on thread termination then try to also give a
+    * chance to cleanup to the client drivers. If called for module termination
+    * then just release the thread information as calling eglReleaseThread
+    * would result in a deadlock.
+    */
+   if (_egl_TSDInitialized) {
+      /* The callback handler has replaced the TLS entry, which is passed in as
+       * 't', with NULL. Restore it here so that the release thread finds it in
+       * the TLS entry.
+       */
+      _eglSetTSD(t);
+      eglReleaseThread();
+   } else {
+      _eglDestroyThreadInfo(t);
+   }
 }
 
 
