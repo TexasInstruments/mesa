@@ -1293,6 +1293,10 @@ dri2_display_destroy(_EGLDisplay *disp)
       break;
 #ifdef HAVE_TIZEN_PLATFORM
    case _EGL_PLATFORM_TIZEN:
+      if (dri2_dpy->image_list_mutex_initialized) {
+         pthread_mutex_destroy(&dri2_dpy->image_list_mutex);
+         dri2_dpy->image_list_mutex_initialized = false;
+      }
       if (dri2_dpy->tpl_dpy)
          tpl_object_unreference((tpl_object_t *) dri2_dpy->tpl_dpy);
       break;
@@ -1349,6 +1353,60 @@ dri2_egl_surface_free_local_buffers(struct dri2_egl_surface *dri2_surf)
    }
 }
 
+static void
+dri2_display_release_resources_tizen(_EGLDisplay *disp)
+{
+#ifdef HAVE_TIZEN_PLATFORM
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   _EGLResource *image_elem;
+
+   /* Destroy _EGLImages in the image_list */
+   pthread_mutex_lock(&dri2_dpy->image_list_mutex);
+   image_elem = dri2_dpy->image_list;
+   dri2_dpy->image_list = NULL;
+   pthread_mutex_unlock(&dri2_dpy->image_list_mutex);
+
+   while (image_elem) {
+      _EGLImage *img = (_EGLImage *) image_elem;
+      struct dri2_egl_image *dri2_img = dri2_egl_image(img);
+
+      image_elem = image_elem->Next;
+
+      /*
+       * Delete the tbm surface user data (_EGLImage), unless the tbm surface
+       * was destroyed since we started processing the image_list.
+       */
+      if (dri2_img->tbm_surf)
+         tbm_surface_internal_delete_user_data(dri2_img->tbm_surf,
+                                               (unsigned long) disp);
+
+      /*
+       * dri2_orphan_tbm_surf_egl_image won't be able to transfer the
+       * _EGLImage to the orphan_image_list once we have started processing
+       * the image_list so we must destroy it ourselves.
+       */
+      dri2_dpy->image->destroyImage(dri2_img->dri_image);
+      free(dri2_img);
+   }
+
+   /* Destroy _EGLimages  in the orphan_image_list*/
+   pthread_mutex_lock(&dri2_dpy->image_list_mutex);
+   image_elem = dri2_dpy->orphan_image_list;
+   dri2_dpy->orphan_image_list = NULL;
+   pthread_mutex_unlock(&dri2_dpy->image_list_mutex);
+
+   while (image_elem) {
+      _EGLImage *img = (_EGLImage *) image_elem;
+      struct dri2_egl_image *dri2_img = dri2_egl_image(img);
+
+      image_elem = image_elem->Next;
+
+       dri2_dpy->image->destroyImage(dri2_img->dri_image);
+       free(dri2_img);
+   }
+#endif
+}
+
 /**
  * Called via eglTerminate(), drv->Terminate().
  *
@@ -1360,6 +1418,8 @@ dri2_terminate(_EGLDisplay *disp)
 {
    /* Release all non-current Context/Surfaces. */
    _eglReleaseDisplayResources(disp);
+
+   dri2_display_release_resources_tizen(disp);
 
    dri2_display_release(disp);
 
@@ -2338,6 +2398,9 @@ dri2_create_image_khr_renderbuffer(_EGLDisplay *disp, _EGLContext *ctx,
 }
 
 #ifdef HAVE_TIZEN_PLATFORM
+static EGLBoolean
+dri2_destroy_image_khr(_EGLDisplay *disp, _EGLImage *image);
+
 int
 dri2_fourcc_from_tbm_format(tbm_format format)
 {
@@ -2434,14 +2497,145 @@ fail_close:
    return NULL;
 }
 
+static void
+dri2_orphan_tbm_surf_egl_image(void *user_data)
+{
+   _EGLImage *img = user_data;
+   struct dri2_egl_image *dri2_img = dri2_egl_image(img);
+   _EGLDisplay *disp = img->Resource.Display;
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+
+   /*
+    * Transfer the passed in _EGLImage from the image_list to the
+    * orphan_image_list so that it can be cleaned up at some later
+    * point. This is necessary as the disp->Mutex needs to be held
+    * in order destroy the _EGLImage and this could potentially cause
+    * a deadlock in the event that the tbm surface is destroyed.
+    */
+   pthread_mutex_lock(&dri2_dpy->image_list_mutex);
+   /*
+    * This may be NULL if called via dri2_terminate or if dri2_terminate is
+    * running in another thread.
+    */
+   if (dri2_dpy->image_list) {
+      _EGLResource *image_elem;
+
+      /* Remove the _EGLImage from the image_list */
+      image_elem = dri2_dpy->image_list;
+      if (image_elem != &img->Resource) {
+         while (image_elem) {
+            if (image_elem->Next == &img->Resource)
+               break;
+            image_elem = image_elem->Next;
+         }
+         image_elem->Next = img->Resource.Next;
+      } else {
+         dri2_dpy->image_list = img->Resource.Next;
+      }
+
+      /* Add the _EGLImage to the orphan_image_list */
+      img->Resource.Next = dri2_dpy->orphan_image_list;
+      dri2_dpy->orphan_image_list = &img->Resource;
+   }
+
+   /*
+    * This function may have been called via tbm_surface_destroy so tbm_surf
+    * may be invalid after this function returns.
+    */
+   dri2_img->tbm_surf = NULL;
+   pthread_mutex_unlock(&dri2_dpy->image_list_mutex);
+}
+
+static _EGLImage *
+dri2_get_tbm_surf_egl_image(_EGLDisplay *disp, _EGLContext *ctx,
+                            tbm_surface_h tbm_surf)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri2_egl_image *dri2_img;
+   _EGLImage *img;
+   int ret;
+
+   ret = tbm_surface_internal_get_user_data(tbm_surf, (unsigned long) disp,
+                                            (void **) &img);
+   if (ret)
+      return img;
+
+   img = dri2_create_image_tbm_surface(disp, ctx, tbm_surf);
+   if (!img) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_create_image_tbm_surface failed");
+      goto fail_exit;
+   }
+   dri2_img = dri2_egl_image(img);
+
+   /* Use 'disp' as the 'key' as the _EGLimage is tied to it */
+   ret = tbm_surface_internal_add_user_data(tbm_surf, (unsigned long) disp,
+                                            dri2_orphan_tbm_surf_egl_image);
+   if (!ret) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_get_tbm_surf_egl_image");
+      goto fail_destroy_image;
+   }
+
+   ret = tbm_surface_internal_set_user_data(tbm_surf, (unsigned long) disp, img);
+   if (!ret) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_get_tbm_surf_egl_image");
+      goto fail_delete_user_data;
+   }
+
+   /*
+    * Store the tbm surface so that the user data (_EGLImage) can be destroyed
+    * in dri2_terminate. We don't take a reference on the surface as this would
+    * prevent it from being destroyed until eglTerminate is called. This isn't
+    * an issue since it will be set to NULL, via dri2_orphan_tbm_surf_egl_image,
+    * once the surface is destroyed (although it's actually safe to call tbm
+    * surface functions with stale/NULL pointers).
+    */
+   dri2_img->tbm_surf = tbm_surf;
+
+   /*
+    * Add to the list of _EGLImages that are associated with tbm surfaces.
+    * This allows the _EGLImage to be destroyed if the application calls
+    * eglTerminate before the tbm surface is destroyed.
+    */
+   pthread_mutex_lock(&dri2_dpy->image_list_mutex);
+   img->Resource.Next = dri2_dpy->image_list;
+   dri2_dpy->image_list = &img->Resource;
+   pthread_mutex_unlock(&dri2_dpy->image_list_mutex);
+
+   return img;
+
+fail_delete_user_data:
+   tbm_surface_internal_delete_user_data(tbm_surf, (unsigned long) disp);
+fail_destroy_image:
+   dri2_destroy_image_khr(disp, img);
+fail_exit:
+   return NULL;
+}
+
 static _EGLImage *
 dri2_create_image_tizen(_EGLDisplay *disp, _EGLContext *ctx,
                         EGLClientBuffer _buffer,
                         const EGLint *attr_list)
 {
-   tbm_surface_h tbm_surf = (tbm_surface_h)_buffer;
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   tbm_surface_h tbm_surf = (tbm_surface_h) _buffer;
+   _EGLImage *img;
+   struct dri2_egl_image *dri2_img;
+   __DRIimage *dri_image;
 
-   return dri2_create_image_tbm_surface(disp, ctx, tbm_surf);
+   img = dri2_get_tbm_surf_egl_image(disp, ctx, tbm_surf);
+   if (!img) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_create_image_tizen");
+      return NULL;
+   }
+   dri2_img = dri2_egl_image(img);
+
+   dri_image = dri2_dpy->image->fromPlanar(dri2_img->dri_image, 0, NULL);
+   if (!dri_image) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_create_image_tizen");
+      return NULL;
+   }
+
+   return dri2_create_image_from_dri(disp, dri_image);
 }
 
 static _EGLImage *
@@ -2453,6 +2647,9 @@ dri2_create_image_wayland_wl_buffer_tizen(_EGLDisplay *disp, _EGLContext *ctx,
    _EGLImageAttribs attrs;
    tbm_surface_h tbm_surf;
    tbm_surface_info_s info;
+   _EGLImage *img;
+   struct dri2_egl_image *dri2_img;
+   __DRIimage *dri_image;
 
    tbm_surf = tpl_display_get_buffer_from_native_pixmap(dri2_dpy->tpl_dpy,
                                                         (tpl_handle_t) _buffer);
@@ -2483,7 +2680,21 @@ dri2_create_image_wayland_wl_buffer_tizen(_EGLDisplay *disp, _EGLContext *ctx,
       return NULL;
    }
 
-   return dri2_create_image_tbm_surface(disp, ctx, tbm_surf);
+   img = dri2_get_tbm_surf_egl_image(disp, ctx, tbm_surf);
+   if (!img) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_create_image_wayland_wl_buffer_tizen");
+      return NULL;
+   }
+   dri2_img = dri2_egl_image(img);
+
+   dri_image =
+      dri2_dpy->image->fromPlanar(dri2_img->dri_image, attrs.PlaneWL, NULL);
+   if (!dri_image) {
+      _eglError(EGL_BAD_PARAMETER, "dri2_create_image_wayland_wl_buffer_tizen");
+      return NULL;
+   }
+
+   return dri2_create_image_from_dri(disp, dri_image);
 }
 #endif
 
@@ -3400,9 +3611,28 @@ dri2_destroy_image_khr(_EGLDisplay *disp, _EGLImage *image)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_image *dri2_img = dri2_egl_image(image);
+#ifdef HAVE_TIZEN_PLATFORM
+   _EGLResource *image_elem;
+#endif
 
    dri2_dpy->image->destroyImage(dri2_img->dri_image);
    free(dri2_img);
+
+#ifdef HAVE_TIZEN_PLATFORM
+   /* Take the opportunity to destroy orphaned tbm surface _EGLImages */
+   pthread_mutex_lock(&dri2_dpy->image_list_mutex);
+   image_elem = dri2_dpy->orphan_image_list;
+   dri2_dpy->orphan_image_list = NULL;
+   pthread_mutex_unlock(&dri2_dpy->image_list_mutex);
+
+   while (image_elem) {
+      dri2_img = dri2_egl_image((_EGLImage *) image_elem);
+      image_elem = image_elem->Next;
+
+      dri2_dpy->image->destroyImage(dri2_img->dri_image);
+      free(dri2_img);
+   }
+#endif
 
    return EGL_TRUE;
 }

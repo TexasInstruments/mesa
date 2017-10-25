@@ -260,6 +260,15 @@ struct dri2_egl_display
 
 #ifdef HAVE_TIZEN_PLATFORM
    tpl_display_t            *tpl_dpy;
+   /*
+    * The image_list_mutex protects the image_list and orphan_image_list. It
+    * should never be held while calling a libtbm function as this may result
+    * in a deadlock.
+    */
+   pthread_mutex_t           image_list_mutex;
+   bool                      image_list_mutex_initialized;
+   _EGLResource             *image_list;
+   _EGLResource             *orphan_image_list;
 #endif
 };
 
@@ -404,6 +413,9 @@ struct dri2_egl_image
 {
    _EGLImage   base;
    __DRIimage *dri_image;
+#ifdef HAVE_TIZEN_PLATFORM
+   tbm_surface_h tbm_surf;
+#endif
 };
 
 struct dri2_egl_sync {

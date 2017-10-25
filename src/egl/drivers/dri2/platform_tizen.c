@@ -891,6 +891,7 @@ dri2_initialize_tizen(_EGLDisplay *dpy)
 {
    struct dri2_egl_display *dri2_dpy;
    int i;
+   int err;
 
    dri2_dpy = calloc(1, sizeof(*dri2_dpy));
    if (!dri2_dpy)
@@ -905,6 +906,11 @@ dri2_initialize_tizen(_EGLDisplay *dpy)
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to create tpl display");
       goto cleanup;
    }
+
+   err = pthread_mutex_init(&dri2_dpy->image_list_mutex, NULL);
+   if (err)
+      goto cleanup;
+   dri2_dpy->image_list_mutex_initialized = true;
 
    for (i = TIZEN_DRM_RENDER_MINOR_START; i <= TIZEN_DRM_RENDER_MINOR_MAX; i++) {
       char *render_path;
