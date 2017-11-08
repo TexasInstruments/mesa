@@ -1126,6 +1126,8 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp,
       wl_surface_damage(dri2_surf->wl_surface_wrapper,
                         0, 0, INT32_MAX, INT32_MAX);
 
+   dri2_flush_drawable_for_swapbuffers(disp, draw);
+
    if (dri2_dpy->is_different_gpu) {
       _EGLContext *ctx = _eglGetCurrentContext();
       struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
@@ -1135,10 +1137,9 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp,
                                  0, 0, dri2_surf->base.Width,
                                  dri2_surf->base.Height,
                                  0, 0, dri2_surf->base.Width,
-                                 dri2_surf->base.Height, 0);
+                                 dri2_surf->base.Height, __BLIT_FLAG_FLUSH);
    }
 
-   dri2_flush_drawable_for_swapbuffers(disp, draw);
    dri2_dpy->flush->invalidate(dri2_surf->dri_drawable);
 
    wl_surface_commit(dri2_surf->wl_surface_wrapper);
