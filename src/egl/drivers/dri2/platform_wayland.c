@@ -1838,13 +1838,12 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
    if (!dri2_dpy->compat_gpus) {
       _EGLContext *ctx = _eglGetCurrentContext();
       struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
-      struct dri_drawable *dri_drawable = dri2_dpy->vtbl->get_dri_drawable(draw);
+
       dri2_blit_image(
          dri2_ctx->dri_context, dri2_surf->current->linear_copy,
          dri2_surf->current->dri_image, 0, 0, dri2_surf->base.Width,
          dri2_surf->base.Height, 0, 0, dri2_surf->base.Width,
-         dri2_surf->base.Height, 0);
-      dri_flush_drawable(dri_drawable);
+         dri2_surf->base.Height, __BLIT_FLAG_FLUSH);
    }
 
    loader_wayland_presentation_feedback(&dri2_surf->wayland_presentation,
