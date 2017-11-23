@@ -56,6 +56,7 @@
 #include "loader_dri_helper.h"
 #include "pipe-loader/pipe_loader.h"
 #include "pipe/p_screen.h"
+#include "util/bitscan.h"
 
 driOptionDescription __dri2ConfigOptions[] = {
       DRI_CONF_SECTION_DEBUG
@@ -443,7 +444,11 @@ driCreateContextAttribs(struct dri_screen *screen, int api,
         mesa_api = API_OPENGLES;
         break;
     case __DRI_API_GLES2:
+        ctx_config.major_version = 2;
+        mesa_api = API_OPENGLES2;
+        break;
     case __DRI_API_GLES3:
+        ctx_config.major_version = 3;
         mesa_api = API_OPENGLES2;
         break;
     case __DRI_API_OPENGL_CORE:
@@ -613,7 +618,14 @@ struct dri_context *
 driCreateNewContext(struct dri_screen *screen, const struct dri_config *config,
                     struct dri_context *shared, void *data)
 {
-    return driCreateNewContextForAPI(screen, __DRI_API_OPENGL,
+    int apifs;
+
+    apifs = ffs(screen->api_mask);
+
+    if (!apifs)
+        return NULL;
+
+    return driCreateNewContextForAPI(screen, apifs - 1,
                                      config, shared, data);
 }
 
