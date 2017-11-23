@@ -53,6 +53,7 @@
 #include "main/errors.h"
 #include "loader/loader.h"
 #include "GL/internal/mesa_interface.h"
+#include "util/bitscan.h"
 
 driOptionDescription __dri2ConfigOptions[] = {
       DRI_CONF_SECTION_DEBUG
@@ -512,7 +513,11 @@ driCreateContextAttribs(__DRIscreen *psp, int api,
         mesa_api = API_OPENGLES;
         break;
     case __DRI_API_GLES2:
+        ctx_config.major_version = 2;
+        mesa_api = API_OPENGLES2;
+        break;
     case __DRI_API_GLES3:
+        ctx_config.major_version = 3;
         mesa_api = API_OPENGLES2;
         break;
     case __DRI_API_OPENGL_CORE:
@@ -704,7 +709,14 @@ static __DRIcontext *
 driCreateNewContext(__DRIscreen *screen, const __DRIconfig *config,
                     __DRIcontext *shared, void *data)
 {
-    return driCreateNewContextForAPI(screen, __DRI_API_OPENGL,
+    int apifs;
+
+    apifs = ffs(dri_screen(screen)->api_mask);
+
+    if (!apifs)
+        return NULL;
+
+    return driCreateNewContextForAPI(screen, apifs - 1,
                                      config, shared, data);
 }
 
