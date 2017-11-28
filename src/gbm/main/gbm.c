@@ -363,6 +363,14 @@ gbm_bo_get_handle_for_plane(struct gbm_bo *bo, int plane)
    return bo->gbm->bo_get_handle(bo, plane);
 }
 
+#define GBM_BACKEND_ABI_VERSION_abi1 1
+struct gbm_device_v1_abi1 {
+   int (*bo_blit)(struct gbm_bo *dst_bo, struct gbm_bo *src_bo,
+                  int dst_x0, int dst_y0, int dst_width, int dst_height,
+                  int src_x0, int src_y0, int src_width, int src_height,
+                  enum gbm_blit_flags flags);
+};
+
 /**
  * Get the chosen modifier for the buffer object
  *
@@ -720,6 +728,34 @@ gbm_format_canonicalize(uint32_t gbm_format)
    default:
       return gbm_format;
    }
+}
+
+/**
+ * Blit from one buffer object to another
+ *
+ * \param dst_bo The destination buffer object
+ * \param src_bo The source buffer object
+ * \param dst_x0 The X coordinate (top left origin) of the destination rectangle
+ * \param dst_y0 The Y coordinate (top left origin) of the destination rectangle
+ * \param dst_width The width of the destination rectangle
+ * \param dst_height The height of the destination rectangle
+ * \param src_x0 The X coordinate (top left origin) of the source rectangle
+ * \param src_y0 The Y coordinate (top left origin) of the source rectangle
+ * \param src_width The width of the source rectangle
+ * \param src_height The height of the source rectangle
+ * \param flags The flags for the blit
+ * \return 1 on success, 0 otherwise
+ */
+GBM_EXPORT int
+gbm_bo_blit(struct gbm_bo *dst_bo, struct gbm_bo *src_bo,
+            int dst_x0, int dst_y0, int dst_width, int dst_height,
+            int src_x0, int src_y0, int src_width, int src_height,
+            enum gbm_blit_flags flags)
+{
+   return dst_bo->gbm->bo_blit(dst_bo, src_bo,
+                                     dst_x0, dst_y0, dst_width, dst_height,
+                                     src_x0, src_y0, src_width, src_height,
+                                     flags);
 }
 
 /**

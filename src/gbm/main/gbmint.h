@@ -98,6 +98,10 @@ struct gbm_device {
                                   struct gbm_bo *bo);
    int (*surface_has_free_buffers)(struct gbm_surface *surface);
    void (*surface_destroy)(struct gbm_surface *surface);
+   int (*bo_blit)(struct gbm_bo *dst_bo, struct gbm_bo *src_bo,
+                  int dst_x0, int dst_y0, int dst_width, int dst_height,
+                  int src_x0, int src_y0, int src_width, int src_height,
+                  enum gbm_blit_flags flags);
 };
 
 /**
