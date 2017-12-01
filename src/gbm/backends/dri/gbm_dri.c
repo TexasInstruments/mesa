@@ -1070,8 +1070,11 @@ gbm_dri_bo_map(struct gbm_bo *_bo,
                                                 &error, NULL);
       }
    }
-   assert(dri->context);
    mtx_unlock(&dri->mutex);
+   if (!dri->context) {
+      errno = ENOSYS;
+      return NULL;
+   }
 
    /* GBM flags and DRI flags are the same, so just pass them on */
    return dri2_map_image(dri->context, bo->image, x, y,
@@ -1199,8 +1202,11 @@ gbm_dri_bo_blit(struct gbm_bo *_dst_bo, struct gbm_bo *_src_bo,
                                                 &error, NULL);
       }
    }
-   assert(dri->context);
    mtx_unlock(&dri->mutex);
+   if (!dri->context) {
+      errno = ENOSYS;
+      return 0;
+   }
 
    /* GBM flags and DRI flags are the same, so just pass them on */
    dri2_blit_image(dri->context, dst_bo->image, src_bo->image,
