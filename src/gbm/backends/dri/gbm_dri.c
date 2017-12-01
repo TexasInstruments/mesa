@@ -1191,8 +1191,11 @@ gbm_dri_bo_map(struct gbm_bo *_bo,
    if (!dri->context)
       dri->context = dri->dri2->createNewContext(dri->screen, NULL,
                                                  NULL, NULL);
-   assert(dri->context);
    mtx_unlock(&dri->mutex);
+   if (!dri->context) {
+      errno = ENOSYS;
+      return NULL;
+   }
 
    /* GBM flags and DRI flags are the same, so just pass them on */
    return dri->image->mapImage(dri->context, bo->image, x, y,
@@ -1320,8 +1323,11 @@ gbm_dri_bo_blit(struct gbm_bo *_dst_bo, struct gbm_bo *_src_bo,
    if (!dri->context)
       dri->context = dri->dri2->createNewContext(dri->screen, NULL,
                                                  NULL, NULL);
-   assert(dri->context);
    mtx_unlock(&dri->mutex);
+   if (!dri->context) {
+      errno = ENOSYS;
+      return 0;
+   }
 
    /* GBM flags and DRI flags are the same, so just pass them on */
    dri->image->blitImage(dri->context, dst_bo->image, src_bo->image,
