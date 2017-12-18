@@ -147,7 +147,8 @@ create_image_from_native(struct dri2_egl_surface *dri2_surf,
 }
 
 static int
-get_back_bo(struct dri2_egl_surface *dri2_surf, bool allow_update)
+get_back_bo(struct dri2_egl_surface *dri2_surf, bool allow_update,
+            bool allow_preserve)
 {
    struct dri2_egl_display *dri2_dpy =
       dri2_egl_display(dri2_surf->base.Resource.Display);
@@ -277,7 +278,7 @@ get_back_bo(struct dri2_egl_surface *dri2_surf, bool allow_update)
    dri2_surf->back->locked = true;
 
    if (dri2_surf->base.SwapBehavior == EGL_BUFFER_PRESERVED &&
-       dri2_surf->current) {
+       allow_preserve && dri2_surf->current) {
       _EGLContext *ctx = _eglGetCurrentContext();
       struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
 
@@ -609,7 +610,7 @@ dri2_tizen_swap_buffers_with_damage(_EGLDisplay *dpy, _EGLSurface *draw,
     * Make sure we have a back buffer in case we're swapping without ever
     * rendering.
     */
-   if (get_back_bo(dri2_surf, false) < 0) {
+   if (get_back_bo(dri2_surf, false, true) < 0) {
       _eglError(EGL_BAD_ALLOC, "DRI2: failed to get back buffer");
       return EGL_FALSE;
    }
@@ -673,7 +674,7 @@ dri2_tizen_query_buffer_age(_EGLDisplay *dpy, _EGLSurface *surface)
 {
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(surface);
 
-   if (get_back_bo(dri2_surf, false) < 0) {
+   if (get_back_bo(dri2_surf, false, true) < 0) {
       _eglError(EGL_BAD_ALLOC, "DRI2: failed to get back buffer");
       return -1;
    }
@@ -748,14 +749,22 @@ dri2_tizen_get_buffers(__DRIdrawable *driDrawable,
    buffers->image_mask = 0;
    buffers->front = NULL;
    buffers->back = NULL;
+   buffers->prev = NULL;
 
    if (buffer_mask & __DRI_IMAGE_BUFFER_FRONT)
       if (get_front_bo(dri2_surf) < 0)
          return 0;
 
-   if (buffer_mask & __DRI_IMAGE_BUFFER_BACK)
-      if (get_back_bo(dri2_surf, true) < 0)
+   if (buffer_mask & __DRI_IMAGE_BUFFER_BACK) {
+      /*
+       * The DRI driver has requested the previous buffer so it will take care
+       * of preserving the previous content.
+       */
+      bool allow_preserve = !(buffer_mask & __DRI_IMAGE_BUFFER_PREV);
+
+      if (get_back_bo(dri2_surf, true, allow_preserve) < 0)
          return 0;
+   }
 
    if (buffer_mask & __DRI_IMAGE_BUFFER_FRONT) {
       buffers->front = dri2_surf->front;
@@ -765,6 +774,14 @@ dri2_tizen_get_buffers(__DRIdrawable *driDrawable,
    if (buffer_mask & __DRI_IMAGE_BUFFER_BACK) {
       buffers->back = dri2_surf->back->dri_image;
       buffers->image_mask |= __DRI_IMAGE_BUFFER_BACK;
+   }
+
+   if (buffer_mask & __DRI_IMAGE_BUFFER_PREV) {
+      if (dri2_surf->base.SwapBehavior == EGL_BUFFER_PRESERVED &&
+          dri2_surf->current) {
+         buffers->prev = dri2_surf->current->dri_image;
+         buffers->image_mask |= __DRI_IMAGE_BUFFER_PREV;
+      }
    }
 
    return 1;
