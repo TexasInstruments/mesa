@@ -85,6 +85,12 @@ struct _egl_config {
    EGLint RecordableAndroid;
    EGLint ComponentType;
    EGLint ConfigSelectGroup;
+   EGLint YUVOrderEXT;
+   EGLint YUVNumberOfPlanesEXT;
+   EGLint YUVSubsampleEXT;
+   EGLint YUVDepthRangeEXT;
+   EGLint YUVCSCStandardEXT;
+   EGLint YUVPlaneBPPEXT;
 };
 
 /**
@@ -137,6 +143,12 @@ _eglOffsetOfConfig(EGLint attr)
       ATTRIB_MAP(EGL_RECORDABLE_ANDROID, RecordableAndroid);
       ATTRIB_MAP(EGL_COLOR_COMPONENT_TYPE_EXT, ComponentType);
       ATTRIB_MAP(EGL_CONFIG_SELECT_GROUP_EXT, ConfigSelectGroup);
+      ATTRIB_MAP(EGL_YUV_ORDER_EXT, YUVOrderEXT);
+      ATTRIB_MAP(EGL_YUV_NUMBER_OF_PLANES_EXT, YUVNumberOfPlanesEXT);
+      ATTRIB_MAP(EGL_YUV_SUBSAMPLE_EXT, YUVSubsampleEXT);
+      ATTRIB_MAP(EGL_YUV_DEPTH_RANGE_EXT, YUVDepthRangeEXT);
+      ATTRIB_MAP(EGL_YUV_CSC_STANDARD_EXT, YUVCSCStandardEXT);
+      ATTRIB_MAP(EGL_YUV_PLANE_BPP_EXT, YUVPlaneBPPEXT);
 #undef ATTRIB_MAP
    default:
       return -1;
