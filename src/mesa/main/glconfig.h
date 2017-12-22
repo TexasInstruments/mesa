@@ -18,6 +18,7 @@ struct gl_config
    enum pipe_format zs_format;
    enum pipe_format accum_format;
 
+   GLboolean rgbMode;
    GLboolean floatMode;
    GLuint doubleBufferMode;
    GLuint stereoMode;
@@ -36,6 +37,14 @@ struct gl_config
 
    /* EXT_framebuffer_sRGB */
    GLint sRGBCapable;
+
+   /* EXT_yuv_surface */
+   GLint YUVOrder;
+   GLint YUVNumberOfPlanes;
+   GLint YUVSubsample;
+   GLint YUVDepthRange;
+   GLint YUVCSCStandard;
+   GLint YUVPlaneBPP;
 };
 
 

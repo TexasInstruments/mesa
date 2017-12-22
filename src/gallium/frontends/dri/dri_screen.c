@@ -148,14 +148,101 @@ driCreateConfigs(enum pipe_format format,
    int color_bits[4];
    struct dri_config **configs, **c;
    struct gl_config *modes;
-   unsigned i, j, k, h;
+   unsigned i, j, k, h, m, n;
    unsigned num_modes;
    unsigned num_accum_bits = (enable_accum) ? 2 : 1;
    bool is_srgb;
    bool is_float;
+   bool is_yuv;
+   int yuv_num_planes;
+   int yuv_order;
+   int yuv_subsample;
+   int yuv_plane_bpp;
+   const int depth_ranges_non_yuv[] = { __DRI_ATTRIB_YUV_DEPTH_RANGE_NONE };
+   const int depth_ranges_yuv[] = { __DRI_ATTRIB_YUV_DEPTH_RANGE_LIMITED_BIT,
+                                    __DRI_ATTRIB_YUV_DEPTH_RANGE_FULL_BIT };
+   const int *depth_ranges;
+   unsigned num_depth_ranges;
+   const int csc_standards_non_yuv[] = { __DRI_ATTRIB_YUV_CSC_STANDARD_NONE };
+   const int csc_standards_yuv[] = { __DRI_ATTRIB_YUV_CSC_STANDARD_601_BIT,
+                                     __DRI_ATTRIB_YUV_CSC_STANDARD_709_BIT,
+                                     __DRI_ATTRIB_YUV_CSC_STANDARD_2020_BIT };
+   const int *csc_standards;
+   unsigned num_csc_standards;
 
    is_srgb = util_format_is_srgb(format);
    is_float = util_format_is_float(format);
+   is_yuv = util_format_is_yuv(format);
+
+   if (is_yuv) {
+      depth_ranges = depth_ranges_yuv;
+      num_depth_ranges = ARRAY_SIZE(depth_ranges_yuv);
+
+      csc_standards = csc_standards_yuv;
+      num_csc_standards = ARRAY_SIZE(csc_standards_yuv);
+
+      yuv_num_planes = util_format_get_num_planes(format);
+
+      /* FIXME: This information should come from format utility functions */
+      switch (format) {
+      case PIPE_FORMAT_UYVY:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_UYVY_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_2_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_NV12:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_YUV_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_NV21:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_YVU_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_IYUV:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_YUV_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_YV12:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_YVU_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_YUYV:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_YUYV_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_2_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_VYUY:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_VYUY_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_2_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      case PIPE_FORMAT_YVYU:
+         yuv_order = __DRI_ATTRIB_YUV_ORDER_YVYU_BIT;
+         yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_2_BIT;
+         yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+         break;
+      default:
+         fprintf(stderr, "[%s:%u] Unknown YUV framebuffer type %s (%d).\n",
+                 __func__, __LINE__,
+                 _mesa_get_format_name(format), format);
+         return NULL;
+      }
+   } else {
+      depth_ranges = depth_ranges_non_yuv;
+      num_depth_ranges = ARRAY_SIZE(depth_ranges_non_yuv);
+
+      csc_standards = csc_standards_non_yuv;
+      num_csc_standards = ARRAY_SIZE(csc_standards_non_yuv);
+
+      yuv_num_planes = 0;
+      yuv_order = __DRI_ATTRIB_YUV_ORDER_NONE;
+      yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_NONE;
+      yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_NONE;
+   }
 
    for (i = 0; i < 4; i++) {
       color_bits[i] =
@@ -174,7 +261,8 @@ driCreateConfigs(enum pipe_format format,
          masks[i] = ((1u << color_bits[i]) - 1) << shifts[i];
    }
 
-   num_modes = num_zs_formats * num_db_modes * num_accum_bits * num_msaa_modes;
+   num_modes = num_zs_formats * num_db_modes * num_accum_bits * num_msaa_modes *
+               num_depth_ranges * num_csc_standards;
    configs = calloc(num_modes + 1, sizeof *configs);
    if (configs == NULL)
        return NULL;
@@ -195,8 +283,10 @@ driCreateConfigs(enum pipe_format format,
            stencil_bits = 0;
         }
 
-        for ( i = 0 ; i < num_db_modes ; i++ ) {
-            for ( h = 0 ; h < num_msaa_modes; h++ ) {
+        for ( n = 0; n < num_csc_standards; n++ ) {
+          for ( m = 0; m < num_depth_ranges; m++ ) {
+            for ( i = 0 ; i < num_db_modes ; i++ ) {
+              for ( h = 0 ; h < num_msaa_modes; h++ ) {
                 for ( j = 0 ; j < num_accum_bits ; j++ ) {
                     if (color_depth_match &&
                         (depth_bits || stencil_bits)) {
@@ -237,7 +327,11 @@ driCreateConfigs(enum pipe_format format,
                     modes->alphaBits  = color_bits[3];
                     modes->alphaMask  = masks[3];
                     modes->alphaShift = shifts[3];
-                    modes->rgbBits   = modes->redBits + modes->greenBits
+
+                    if (is_yuv)
+                        modes->rgbBits = 8;
+                    else
+                        modes->rgbBits = modes->redBits + modes->greenBits
                             + modes->blueBits + modes->alphaBits;
 
                     modes->accumRedBits   = 16 * j;
@@ -248,13 +342,24 @@ driCreateConfigs(enum pipe_format format,
                     modes->stencilBits = stencil_bits;
                     modes->depthBits = depth_bits;
 
+                    modes->rgbMode = !is_yuv;
+
                     modes->doubleBufferMode = db_modes[i];
 
                     modes->samples = msaa_samples[h];
 
                     modes->sRGBCapable = is_srgb;
+
+                    modes->YUVOrder = yuv_order;
+                    modes->YUVNumberOfPlanes = yuv_num_planes;
+                    modes->YUVSubsample = yuv_subsample;
+                    modes->YUVDepthRange = depth_ranges[m];
+                    modes->YUVCSCStandard = csc_standards[n];
+                    modes->YUVPlaneBPP = yuv_plane_bpp;
                 }
+              }
             }
+          }
         }
     }
     *c = NULL;
@@ -332,6 +437,14 @@ dri_fill_in_modes(struct dri_screen *screen)
       PIPE_FORMAT_R5G5B5A1_UNORM,
       PIPE_FORMAT_B4G4R4A4_UNORM,
       PIPE_FORMAT_R4G4B4A4_UNORM,
+      PIPE_FORMAT_UYVY,
+      PIPE_FORMAT_NV12,
+      PIPE_FORMAT_NV21,
+      PIPE_FORMAT_IYUV,
+      PIPE_FORMAT_YV12,
+      PIPE_FORMAT_YUYV,
+      PIPE_FORMAT_VYUY,
+      PIPE_FORMAT_YVYU,
    };
    struct dri_config **configs = NULL;
    enum pipe_format zs_formats[5];
@@ -343,6 +456,7 @@ dri_fill_in_modes(struct dri_screen *screen)
    bool allow_rgba_ordering;
    bool allow_rgb10;
    bool allow_fp16;
+   bool allow_yuv;
 
    static const bool db_modes[] = { false, true };
 
@@ -352,6 +466,8 @@ dri_fill_in_modes(struct dri_screen *screen)
    allow_rgba_ordering = dri_loader_get_cap(screen, DRI_LOADER_CAP_RGBA_ORDERING);
    allow_rgb10 = driQueryOptionb(&screen->dev->option_cache, "allow_rgb10_configs");
    allow_fp16 = dri_loader_get_cap(screen, DRI_LOADER_CAP_FP16);
+
+   allow_yuv = dri_loader_get_cap(screen, DRI_LOADER_CAP_YUV_SURFACE_IMG);
 
 #define HAS_ZS(fmt) \
    p_screen->is_format_supported(p_screen, PIPE_FORMAT_##fmt, \
@@ -410,6 +526,9 @@ dri_fill_in_modes(struct dri_screen *screen)
          continue;
 
       if (!allow_fp16 && util_format_is_float(pipe_formats[f]))
+         continue;
+
+      if (!allow_yuv && util_format_is_yuv(pipe_formats[f]))
          continue;
 
       if (!p_screen->is_format_supported(p_screen, pipe_formats[f],
