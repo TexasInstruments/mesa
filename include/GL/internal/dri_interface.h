@@ -826,7 +826,13 @@ struct __DRIuseInvalidateExtensionRec {
 #define __DRI_ATTRIB_GREEN_SHIFT		51
 #define __DRI_ATTRIB_BLUE_SHIFT			52
 #define __DRI_ATTRIB_ALPHA_SHIFT		53
-#define __DRI_ATTRIB_MAX			54
+#define __DRI_ATTRIB_YUV_ORDER			54
+#define __DRI_ATTRIB_YUV_NUMBER_OF_PLANES	55
+#define __DRI_ATTRIB_YUV_SUBSAMPLE		56
+#define __DRI_ATTRIB_YUV_DEPTH_RANGE		57
+#define __DRI_ATTRIB_YUV_CSC_STANDARD		58
+#define __DRI_ATTRIB_YUV_PLANE_BPP		59
+#define __DRI_ATTRIB_MAX			60
 
 /* __DRI_ATTRIB_RENDER_TYPE */
 #define __DRI_ATTRIB_RGBA_BIT			0x01	
@@ -834,6 +840,7 @@ struct __DRIuseInvalidateExtensionRec {
 #define __DRI_ATTRIB_LUMINANCE_BIT		0x04
 #define __DRI_ATTRIB_FLOAT_BIT			0x08
 #define __DRI_ATTRIB_UNSIGNED_FLOAT_BIT		0x10
+#define __DRI_ATTRIB_YUV_BIT			0x20
 
 /* __DRI_ATTRIB_CONFIG_CAVEAT */
 #define __DRI_ATTRIB_SLOW_BIT			0x01
@@ -859,6 +866,39 @@ struct __DRIuseInvalidateExtensionRec {
 #define __DRI_ATTRIB_SWAP_EXCHANGE              0x8061
 #define __DRI_ATTRIB_SWAP_COPY                  0x8062
 #define __DRI_ATTRIB_SWAP_UNDEFINED             0x8063
+
+/* __DRI_ATTRIB_YUV_ORDER */
+#define __DRI_ATTRIB_YUV_ORDER_NONE             0x0
+#define __DRI_ATTRIB_YUV_ORDER_YUV_BIT          0x1
+#define __DRI_ATTRIB_YUV_ORDER_YVU_BIT          0x2
+#define __DRI_ATTRIB_YUV_ORDER_YUYV_BIT         0x4
+#define __DRI_ATTRIB_YUV_ORDER_UYVY_BIT         0x8
+#define __DRI_ATTRIB_YUV_ORDER_YVYU_BIT         0x10
+#define __DRI_ATTRIB_YUV_ORDER_VYUY_BIT         0x20
+#define __DRI_ATTRIB_YUV_ORDER_AYUV_BIT         0x40
+
+/* __DRI_ATTRIB_YUV_SUBSAMPLE */
+#define __DRI_ATTRIB_YUV_SUBSAMPLE_NONE         0x0
+#define __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT    0x1
+#define __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_2_BIT    0x2
+#define __DRI_ATTRIB_YUV_SUBSAMPLE_4_4_4_BIT    0x4
+
+/* __DRI_ATTRIB_YUV_DEPTH_RANGE */
+#define __DRI_ATTRIB_YUV_DEPTH_RANGE_NONE       0x0
+#define __DRI_ATTRIB_YUV_DEPTH_RANGE_LIMITED_BIT 0x1
+#define __DRI_ATTRIB_YUV_DEPTH_RANGE_FULL_BIT   0x2
+
+/* __DRI_ATTRIB_YUV_CSC_STANDARD */
+#define __DRI_ATTRIB_YUV_CSC_STANDARD_NONE      0x0
+#define __DRI_ATTRIB_YUV_CSC_STANDARD_601_BIT   0x1
+#define __DRI_ATTRIB_YUV_CSC_STANDARD_709_BIT   0x2
+#define __DRI_ATTRIB_YUV_CSC_STANDARD_2020_BIT  0x4
+
+/* __DRI_ATTRIB_YUV_PLANE_BPP */
+#define __DRI_ATTRIB_YUV_PLANE_BPP_NONE         0x0
+#define __DRI_ATTRIB_YUV_PLANE_BPP_0_BIT        0x1
+#define __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT        0x2
+#define __DRI_ATTRIB_YUV_PLANE_BPP_10_BIT       0x4
 
 /**
  * This extension defines the core DRI functionality.

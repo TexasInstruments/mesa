@@ -1450,6 +1450,15 @@ _mesa_format_matches_format_and_type(mesa_format mformat,
    if (error)
       *error = GL_NO_ERROR;
 
+   switch (mformat) {
+   case MESA_FORMAT_YUV420_2PLANE:
+   case MESA_FORMAT_YVU420_2PLANE:
+      return false;
+
+   default:
+      break;
+   }
+
    if (_mesa_is_format_compressed(mformat)) {
       if (error)
          *error = GL_INVALID_ENUM;

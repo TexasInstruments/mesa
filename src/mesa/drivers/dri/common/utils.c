@@ -166,6 +166,21 @@ driGetRendererString( char * buffer, const char * hardware_name,
  *                              which translates to
  *                              EGL_MUTABLE_RENDER_BUFFER_BIT_KHR.
  *
+ * \param yuv_depth_range YUV pixel depth range. For non-YUV pixel formats this
+ *                        should be \c __DRI_ATTRIB_YUV_DEPTH_RANGE_NONE.
+ *                        Otherwise valid values are
+ *                        \c __DRI_ATTRIB_YUV_DEPTH_RANGE_LIMITED_BIT and
+ *                        \c __DRI_ATTRIB_YUV_DEPTH_RANGE_FULL_BIT. See the
+ *                        EGL_EXT_yuv_surface extension spec for more details.
+ * \param yuv_csc_standard YUV color conversion standard. For non-YUV pixel
+ *                         formats this should be
+ *                         \c __DRI_ATTRIB_YUV_CSC_STANDARD_NONE. Otherwise
+ *                         valid values are
+ *                         \c __DRI_ATTRIB_YUV_CSC_STANDARD_601_BIT,
+ *                         \c __DRI_ATTRIB_YUV_CSC_STANDARD_709_BIT and
+ *                         \c __DRI_ATTRIB_YUV_CSC_STANDARD_2020_BIT. See the
+ *                         EGL_EXT_yuv_surface extension spec for more details.
+ *
  * \returns
  * Pointer to any array of pointers to the \c __DRIconfig structures created
  * for the specified formats.  If there is an error, \c NULL is returned.
@@ -179,7 +194,8 @@ driCreateConfigs(mesa_format format,
 		 const GLenum * db_modes, unsigned num_db_modes,
 		 const uint8_t * msaa_samples, unsigned num_msaa_modes,
 		 GLboolean enable_accum, GLboolean color_depth_match,
-		 GLboolean mutable_render_buffer)
+		 GLboolean mutable_render_buffer,
+		 GLint yuv_depth_range, GLint yuv_csc_standard)
 {
    static const struct {
       uint32_t masks[4];
@@ -218,6 +234,9 @@ driCreateConfigs(mesa_format format,
       /* MESA_FORMAT_RGBA_FLOAT16 */
       {{ 0, 0, 0, 0},
        { 0, 16, 32, 48 }},
+      /* Mesa YUV formats */
+      {{ 0, 0, 0, 0 },
+       { -1, -1, -1, -1}},
    };
 
    const uint32_t * masks;
@@ -231,6 +250,11 @@ driCreateConfigs(mesa_format format,
    int green_bits;
    int blue_bits;
    int alpha_bits;
+   int yuv_order = __DRI_ATTRIB_YUV_ORDER_NONE;
+   int yuv_num_planes = 0;
+   int yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_NONE;
+   int yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_NONE;
+   bool is_yuv = false;
    bool is_srgb;
    bool is_float;
 
@@ -281,6 +305,33 @@ driCreateConfigs(mesa_format format,
    case MESA_FORMAT_R10G10B10A2_UNORM:
       masks = format_table[8].masks;
       shifts = format_table[8].shifts;
+      break;
+   case MESA_FORMAT_YCBCR:
+      masks = format_table[11].masks;
+      shifts = format_table[11].shifts;
+      is_yuv = true; /* FIXME: This should come from formats_info.py */
+      yuv_order = __DRI_ATTRIB_YUV_ORDER_YUYV_BIT;
+      yuv_num_planes = 1;
+      yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_2_BIT;
+      yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+      break;
+   case MESA_FORMAT_YUV420_2PLANE:
+      masks = format_table[11].masks;
+      shifts = format_table[11].shifts;
+      is_yuv = true; /* FIXME: This should come from formats_info.py */
+      yuv_order = __DRI_ATTRIB_YUV_ORDER_YUV_BIT;
+      yuv_num_planes = 2;
+      yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT;
+      yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
+      break;
+   case MESA_FORMAT_YVU420_2PLANE:
+      masks = format_table[11].masks;
+      shifts = format_table[11].shifts;
+      is_yuv = true; /* FIXME: This should come from formats_info.py */
+      yuv_order = __DRI_ATTRIB_YUV_ORDER_YVU_BIT;
+      yuv_num_planes = 2;
+      yuv_subsample = __DRI_ATTRIB_YUV_SUBSAMPLE_4_2_0_BIT;
+      yuv_plane_bpp = __DRI_ATTRIB_YUV_PLANE_BPP_8_BIT;
       break;
    default:
       fprintf(stderr, "[%s:%u] Unknown framebuffer type %s (%d).\n",
@@ -337,8 +388,12 @@ driCreateConfigs(mesa_format format,
 		    modes->greenShift = shifts[1];
 		    modes->blueShift  = shifts[2];
 		    modes->alphaShift = shifts[3];
-		    modes->rgbBits   = modes->redBits + modes->greenBits
-		    	+ modes->blueBits + modes->alphaBits;
+
+		    if (is_yuv)
+			modes->rgbBits = 8;
+		    else
+			modes->rgbBits = modes->redBits + modes->greenBits
+			    + modes->blueBits + modes->alphaBits;
 
 		    modes->accumRedBits   = 16 * j;
 		    modes->accumGreenBits = 16 * j;
@@ -355,6 +410,7 @@ driCreateConfigs(mesa_format format,
 		    modes->transparentBlue = GLX_DONT_CARE;
 		    modes->transparentAlpha = GLX_DONT_CARE;
 		    modes->transparentIndex = GLX_DONT_CARE;
+		    modes->rgbMode = !is_yuv;
 
 		    if (db_modes[i] == __DRI_ATTRIB_SWAP_NONE) {
 		    	modes->doubleBufferMode = GL_FALSE;
@@ -379,6 +435,13 @@ driCreateConfigs(mesa_format format,
 		    modes->yInverted = GL_TRUE;
 		    modes->sRGBCapable = is_srgb;
 		    modes->mutableRenderBuffer = mutable_render_buffer;
+
+		    modes->YUVOrder = yuv_order;
+		    modes->YUVNumberOfPlanes = yuv_num_planes;
+		    modes->YUVSubsample = yuv_subsample;
+		    modes->YUVDepthRange = yuv_depth_range;
+		    modes->YUVCSCStandard = yuv_csc_standard;
+		    modes->YUVPlaneBPP = yuv_plane_bpp;
 		}
 	    }
 	}
@@ -468,6 +531,12 @@ static const struct { unsigned int attrib, offset; } attribMap[] = {
     __ATTRIB(__DRI_ATTRIB_YINVERTED,			yInverted),
     __ATTRIB(__DRI_ATTRIB_FRAMEBUFFER_SRGB_CAPABLE,	sRGBCapable),
     __ATTRIB(__DRI_ATTRIB_MUTABLE_RENDER_BUFFER,	mutableRenderBuffer),
+    __ATTRIB(__DRI_ATTRIB_YUV_ORDER,			YUVOrder),
+    __ATTRIB(__DRI_ATTRIB_YUV_NUMBER_OF_PLANES,		YUVNumberOfPlanes),
+    __ATTRIB(__DRI_ATTRIB_YUV_SUBSAMPLE,		YUVSubsample),
+    __ATTRIB(__DRI_ATTRIB_YUV_DEPTH_RANGE,		YUVDepthRange),
+    __ATTRIB(__DRI_ATTRIB_YUV_CSC_STANDARD,		YUVCSCStandard),
+    __ATTRIB(__DRI_ATTRIB_YUV_PLANE_BPP,		YUVPlaneBPP),
 
     /* The struct field doesn't matter here, these are handled by the
      * switch in driGetConfigAttribIndex.  We need them in the array
@@ -487,10 +556,14 @@ driGetConfigAttribIndex(const __DRIconfig *config,
 {
     switch (attribMap[index].attrib) {
     case __DRI_ATTRIB_RENDER_TYPE:
-        /* no support for color index mode */
-	*value = __DRI_ATTRIB_RGBA_BIT;
-        if (config->modes.floatMode)
-            *value |= __DRI_ATTRIB_FLOAT_BIT;
+	/* no support for color index mode */
+	if (config->modes.rgbMode)
+	    *value = __DRI_ATTRIB_RGBA_BIT;
+	else
+	    *value = __DRI_ATTRIB_YUV_BIT;
+
+	if (config->modes.floatMode)
+	    *value |= __DRI_ATTRIB_FLOAT_BIT;
 	break;
     case __DRI_ATTRIB_CONFIG_CAVEAT:
 	if (config->modes.visualRating == GLX_NON_CONFORMANT_CONFIG)

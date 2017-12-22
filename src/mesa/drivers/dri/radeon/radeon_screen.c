@@ -839,7 +839,9 @@ __DRIconfig **radeonInitScreen2(__DRIscreen *psp)
 				     ARRAY_SIZE(back_buffer_modes),
 				     msaa_samples_array,
 				     ARRAY_SIZE(msaa_samples_array),
-				     GL_TRUE, GL_FALSE, GL_FALSE);
+				     GL_TRUE, GL_FALSE, GL_FALSE,
+				     __DRI_ATTRIB_YUV_DEPTH_RANGE_NONE,
+				     __DRI_ATTRIB_YUV_CSC_STANDARD_NONE);
       configs = driConcatConfigs(configs, new_configs);
    }
 
