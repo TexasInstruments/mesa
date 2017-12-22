@@ -46,7 +46,8 @@ driCreateConfigs(mesa_format format,
 		 const GLenum * db_modes, unsigned num_db_modes,
 		 const uint8_t * msaa_samples, unsigned num_msaa_modes,
 		 GLboolean enable_accum, GLboolean color_depth_match,
-		 GLboolean mutable_render_buffer);
+		 GLboolean mutable_render_buffer,
+ 		 GLint yuv_depth_range, GLint yuv_csc_standards);
 
 __DRIconfig **driConcatConfigs(__DRIconfig **a,
 			       __DRIconfig **b);
