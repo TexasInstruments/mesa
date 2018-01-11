@@ -183,6 +183,12 @@ static const struct dri2_wl_visual {
       PIPE_FORMAT_R4G4B4X4_UNORM,
       DRM_FORMAT_XRGB4444,
    },
+   {
+      DRM_FORMAT_YUYV,
+      PIPE_FORMAT_YUYV,
+      PIPE_FORMAT_NONE,
+      DRM_FORMAT_YUYV,
+   },
 };
 
 static int
@@ -1647,6 +1653,7 @@ dri2_wl_get_capability(void *loaderPrivate, enum dri_loader_cap cap)
 {
    switch (cap) {
    case DRI_LOADER_CAP_FP16:
+   case DRI_LOADER_CAP_YUV_SURFACE_IMG:
       return 1;
    case DRI_LOADER_CAP_RGBA_ORDERING:
       return 1;
@@ -2574,6 +2581,7 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    unsigned int format_count[ARRAY_SIZE(dri2_wl_visuals)] = {0};
+   EGLint surface_type;
 
    /* Try to create an EGLConfig for every config the driver declares */
    for (unsigned i = 0; dri2_dpy->driver_configs[i]; i++) {
@@ -2600,6 +2608,10 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
          conversion = true;
       }
 
+      surface_type = EGL_WINDOW_BIT;
+      if (dri2_wl_visuals[idx].wl_drm_format != WL_DRM_FORMAT_YUYV)
+         surface_type |= EGL_PBUFFER_BIT;
+
       EGLint attr_list[] = {
          EGL_NATIVE_VISUAL_ID, dri2_wl_visuals[idx].wl_drm_format,
          EGL_NONE,
@@ -2607,7 +2619,7 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
 
       /* The format is supported one way or another; add the EGLConfig */
       dri2_conf = dri2_add_config(disp, dri2_dpy->driver_configs[i],
-                                  EGL_WINDOW_BIT | EGL_PBUFFER_BIT, attr_list);
+                                  surface_type, attr_list);
       if (!dri2_conf)
          continue;
 
