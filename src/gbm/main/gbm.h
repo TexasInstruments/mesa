@@ -167,6 +167,8 @@ enum gbm_bo_format {
 
 #define GBM_FORMAT_AYUV		__gbm_fourcc_code('A', 'Y', 'U', 'V') /* [31:0] A:Y:Cb:Cr 8:8:8:8 little endian */
 
+#define GBM_FORMAT_YVU444_PACK10_IMG __gbm_fourcc_code('I', 'M', 'G', '2') /* [31:0] unused:Y:Cr:Cb 2:10:10:10 little endian */
+
 /*
  * 2 plane YCbCr
  * index 0 = Y plane, [7:0] Y

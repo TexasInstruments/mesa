@@ -509,9 +509,19 @@ static const struct gbm_dri_visual gbm_dri_visuals_table[] = {
      { 5, 5, 5, 1 },
    },
    {
+      GBM_FORMAT_ARGB4444, __DRI_IMAGE_FORMAT_ARGB4444,
+      { 8, 4, 0, 12 },
+      { 4, 4, 4, 4 },
+   },
+   {
      GBM_FORMAT_RGB565, __DRI_IMAGE_FORMAT_RGB565,
      { 11, 5, 0, -1 },
      { 5, 6, 5, 0 },
+   },
+   {
+     GBM_FORMAT_BGR888, __DRI_IMAGE_FORMAT_BGR888,
+     { 0, 8, 16, -1 },
+     { 8, 8, 8, 0 },
    },
    {
      GBM_FORMAT_XRGB8888, __DRI_IMAGE_FORMAT_XRGB8888,
@@ -564,6 +574,12 @@ static const struct gbm_dri_visual gbm_dri_visuals_table[] = {
      { 0, 16, 32, 48 },
      { 16, 16, 16, 16 },
      true,
+   },
+   {
+     GBM_FORMAT_YUYV, __DRI_IMAGE_FORMAT_YUYV,
+   },
+   {
+     GBM_FORMAT_YVU444_PACK10_IMG, __DRI_IMAGE_FORMAT_YVU444_PACK10_IMG,
    },
 };
 
