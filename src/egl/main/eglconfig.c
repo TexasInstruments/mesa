@@ -40,6 +40,7 @@
 #include "util/macros.h"
 
 #include "eglconfig.h"
+#include "eglconfigdebug.h"
 #include "egldisplay.h"
 #include "eglcurrent.h"
 #include "egllog.h"
@@ -1039,14 +1040,21 @@ _eglChooseConfig(_EGLDisplay *disp, const EGLint *attrib_list,
                  EGLConfig *configs, EGLint config_size, EGLint *num_configs)
 {
    _EGLConfig criteria;
+   EGLBoolean result;
 
    if (!_eglParseConfigAttribList(&criteria, disp, attrib_list))
       return _eglError(EGL_BAD_ATTRIBUTE, "eglChooseConfig");
 
-   return _eglFilterConfigArray(disp->Configs,
-         configs, config_size, num_configs,
-         _eglFallbackMatch, _eglFallbackCompare,
-         (void *) &criteria);
+   result = _eglFilterConfigArray(disp->Configs,
+                                  configs, config_size, num_configs,
+                                  _eglFallbackMatch, _eglFallbackCompare,
+                                  (void *) &criteria);
+
+   if (result && (_eglGetLogLevel() == _EGL_DEBUG))
+      eglPrintConfigDebug(disp, configs, *num_configs,
+                          EGL_CONFIG_DEBUG_CHOOSE);
+
+   return result;
 }
 
 
@@ -1095,6 +1103,10 @@ _eglGetConfigs(_EGLDisplay *disp, EGLConfig *configs,
 {
    *num_config = _eglFlattenArray(disp->Configs, (void *) configs,
          sizeof(configs[0]), config_size, _eglFlattenConfig);
+
+   if (_eglGetLogLevel() == _EGL_DEBUG)
+      eglPrintConfigDebug(disp, configs, *num_config,
+                          EGL_CONFIG_DEBUG_GET);
 
    return EGL_TRUE;
 }
