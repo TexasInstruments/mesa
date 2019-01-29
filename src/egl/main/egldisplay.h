@@ -106,6 +106,7 @@ struct _egl_extensions {
    EGLBoolean EXT_create_context_robustness;
    EGLBoolean EXT_image_dma_buf_import;
    EGLBoolean EXT_image_dma_buf_import_modifiers;
+   EGLBoolean EXT_image_gl_colorspace;
    EGLBoolean EXT_pixel_format_float;
    EGLBoolean EXT_present_opaque;
    EGLBoolean EXT_protected_content;

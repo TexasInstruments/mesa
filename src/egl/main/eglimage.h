@@ -76,6 +76,9 @@ struct _egl_image_attribs {
 
    /* EGL_EXT_protected_content || EGL_EXT_protected_surface */
    EGLBoolean ProtectedContent;
+
+   /* EGL_EXT_image_gl_colorspace */
+   EGLint GLColorspace;
 };
 
 /**
