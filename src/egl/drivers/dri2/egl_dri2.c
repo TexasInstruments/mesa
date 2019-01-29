@@ -737,6 +737,7 @@ dri2_setup_screen(_EGLDisplay *disp)
                                     PIPE_TEXTURE_2D, 0, 0,
                                     PIPE_BIND_RENDER_TARGET)) {
       disp->Extensions.KHR_gl_colorspace = EGL_TRUE;
+      disp->Extensions.EXT_image_gl_colorspace = EGL_TRUE;
    }
 
    disp->Extensions.EXT_config_select_group = EGL_TRUE;
@@ -2012,6 +2013,11 @@ dri2_create_image_wayland_wl_buffer(_EGLDisplay *disp, _EGLContext *ctx,
    if (!_eglParseImageAttribList(&attrs, disp, attr_list))
       return NULL;
 
+   if (attrs.GLColorspace != EGL_GL_COLORSPACE_DEFAULT_EXT) {
+      _eglError(EGL_BAD_MATCH, "unsupported colorspace");
+      return NULL;
+   }
+
    plane = attrs.PlaneWL;
 
    dri_image = dri2_from_planar(buffer->driver_buffer, plane, NULL);
@@ -2083,6 +2089,11 @@ dri2_create_image_khr_texture(_EGLDisplay *disp, _EGLContext *ctx,
 
    if (!_eglParseImageAttribList(&attrs, disp, attr_list))
       return EGL_NO_IMAGE_KHR;
+
+   if (attrs.GLColorspace != EGL_GL_COLORSPACE_DEFAULT_EXT) {
+      _eglError(EGL_BAD_MATCH, "unsupported colorspace");
+      return EGL_NO_IMAGE_KHR;
+   }
 
    switch (target) {
    case EGL_GL_TEXTURE_2D_KHR:
@@ -2357,6 +2368,21 @@ dri2_num_fourcc_format_planes(EGLint format)
    }
 }
 
+static int
+dri2_get_srgb_fourcc(int drm_fourcc)
+{
+   switch (drm_fourcc) {
+   case DRM_FORMAT_ARGB8888:
+      return __DRI_IMAGE_FOURCC_SARGB8888;
+   case DRM_FORMAT_ABGR8888:
+      return __DRI_IMAGE_FOURCC_SABGR8888;
+   default:
+      _eglLog(_EGL_DEBUG, "%s: no matching sRGB FourCC for %#x",
+              __func__, drm_fourcc);
+      return 0;
+   }
+}
+
 /* Returns the total number of file descriptors. Zero indicates an error. */
 static unsigned
 dri2_check_dma_buf_format(const _EGLImageAttribs *attrs)
@@ -2515,6 +2541,7 @@ dri2_create_image_dma_buf(_EGLDisplay *disp, _EGLContext *ctx,
    int fds[DMA_BUF_MAX_PLANES];
    int pitches[DMA_BUF_MAX_PLANES];
    int offsets[DMA_BUF_MAX_PLANES];
+   int fourcc;
    uint64_t modifier;
    unsigned error = __DRI_IMAGE_ERROR_SUCCESS;
    EGLint egl_error;
@@ -2540,6 +2567,18 @@ dri2_create_image_dma_buf(_EGLDisplay *disp, _EGLContext *ctx,
    if (!num_fds)
       return NULL;
 
+   if (attrs.GLColorspace == EGL_GL_COLORSPACE_SRGB_KHR) {
+      fourcc = dri2_get_srgb_fourcc(attrs.DMABufFourCC.Value);
+      if (fourcc == 0) {
+         _eglError(EGL_BAD_MATCH, "unsupported colorspace");
+         return NULL;
+      }
+   } else {
+      assert(attrs.GLColorspace == EGL_GL_COLORSPACE_LINEAR_KHR ||
+             attrs.GLColorspace == EGL_GL_COLORSPACE_DEFAULT_EXT);
+      fourcc = attrs.DMABufFourCC.Value;
+   }
+
    for (unsigned i = 0; i < num_fds; ++i) {
       fds[i] = attrs.DMABufPlaneFds[i].Value;
       pitches[i] = attrs.DMABufPlanePitches[i].Value;
@@ -2562,7 +2601,7 @@ dri2_create_image_dma_buf(_EGLDisplay *disp, _EGLContext *ctx,
 
    dri_image = dri2_from_dma_bufs(
       dri2_dpy->dri_screen_render_gpu, attrs.Width, attrs.Height,
-      attrs.DMABufFourCC.Value, modifier, fds, num_fds, pitches, offsets,
+      fourcc, modifier, fds, num_fds, pitches, offsets,
       attrs.DMABufYuvColorSpaceHint.Value, attrs.DMABufSampleRangeHint.Value,
       attrs.DMABufChromaHorizontalSiting.Value,
       attrs.DMABufChromaVerticalSiting.Value,
