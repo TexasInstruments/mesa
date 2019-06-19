@@ -331,6 +331,25 @@ struct dri2_egl_context {
    struct dri_context *dri_context;
 };
 
+#define DRI2_SURFACE_NUM_COLOR_BUFFERS 4
+
+#ifdef HAVE_NULL_PLATFORM
+struct swap_queue_elem
+{
+   uint32_t             swap_interval;
+   uint32_t             back_id;
+   uint32_t             fb_id;
+};
+
+enum {
+   SWAP_IDLE,
+   SWAP_FLIP,
+   SWAP_VBLANK,
+   SWAP_POLL,
+   SWAP_ERROR,
+};
+#endif
+
 struct dri2_egl_surface {
    _EGLSurface base;
    struct dri_drawable *dri_drawable;
@@ -371,6 +390,19 @@ struct dri2_egl_surface {
    struct gbm_dri_surface *gbm_surf;
 #endif
 
+#if defined(HAVE_NULL_PLATFORM)
+   /*
+    * Protects swap_queue_idx_head, swap_queue_idx_tail and
+    * color_buffers.locked.
+    */
+   pthread_mutex_t        mutex;
+   pthread_cond_t         swap_queue_cond;
+   pthread_cond_t         swap_unlock_buffer_cond;
+   int                    swap_queue_idx_head;
+   int                    swap_queue_idx_tail;
+   pthread_t              swap_queue_processor;
+#endif
+
 #if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM) || \
     defined(HAVE_NULL_PLATFORM)
    struct {
@@ -394,7 +426,7 @@ struct dri2_egl_surface {
 #endif
       bool locked;
       int age;
-   } color_buffers[4], *back, *current;
+   } color_buffers[DRI2_SURFACE_NUM_COLOR_BUFFERS], *back, *current;
 #endif
 
 #ifdef HAVE_ANDROID_PLATFORM
@@ -428,7 +460,13 @@ struct dri2_egl_surface {
 #endif
 
 #ifdef HAVE_NULL_PLATFORM
-   uint32_t             front_fb_id;
+   uint32_t                front_fb_id;
+   struct swap_queue_elem  swap_queue[DRI2_SURFACE_NUM_COLOR_BUFFERS];
+   struct swap_queue_elem  *swap_data;
+   int                     swap_state;
+   bool                    mutex_init;
+   bool                    cond_init;
+   bool                    cond_init_unlock_buffer;
 #endif
 
    int out_fence_fd;
