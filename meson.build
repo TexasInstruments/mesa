@@ -33,6 +33,12 @@ fs = import('fs')
 
 sizeof_pointer = cc.sizeof('void*').to_string()
 
+if not cpp.compiles('thread_local int x = 0;', name : 'thread_local')
+  if cpp.has_argument('-std=c++11')
+     add_project_arguments('-std=c++11', language : 'cpp')
+  endif
+endif
+
 null_dep = dependency('', required : false)
 
 if get_option('layout') != 'mirror'
