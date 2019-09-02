@@ -371,6 +371,9 @@ display_output_atomic_init(int fd, struct display_output *output)
    if (!output->atomic_state)
       goto err_destroy_mode_prop_blob;
 
+   if (property_id_get_for_name(plane_prop_res, "IN_FENCE_FD"))
+      output->in_fence_supported = true;
+
    output->connector_prop_res = connector_prop_res;
    output->crtc_prop_res = crtc_prop_res;
    output->plane_prop_res = plane_prop_res;
@@ -388,6 +391,53 @@ err_free_connector_prop_res:
    return false;
 }
 
+static void
+display_output_atomic_add_in_fence(struct display_output *output,
+                                   int kms_in_fence_fd)
+{
+   const struct object_property obj_sync_props[] = {
+      object_property_set_named(output, plane, "IN_FENCE_FD", kms_in_fence_fd),
+   };
+   int err;
+
+   /* Explicit synchronisation is not being used */
+   if (kms_in_fence_fd < 0)
+      return;
+
+   err = atomic_state_add_object_properties(output->atomic_state,
+                                            obj_sync_props,
+                                            ARRAY_SIZE(obj_sync_props));
+   if (err)
+      _eglLog(_EGL_DEBUG, "%s: failed to add props ERR = %d", __func__, err);
+}
+
+static void
+atomic_claim_in_fence_fd(struct dri2_egl_surface *dri2_surf,
+                         struct swap_queue_elem *swap_data)
+{
+   /* Explicit synchronisation is not being used */
+   if (!dri2_surf->enable_out_fence)
+      return;
+
+   if (dri2_surf->out_fence_fd < 0) {
+      _eglLog(_EGL_DEBUG, "%s: missing 'in' fence", __func__);
+      return;
+   }
+
+   /* Take ownership of the fd */
+   swap_data->kms_in_fence_fd = dri2_surf->out_fence_fd;
+   dri2_surf->out_fence_fd = -1;
+}
+
+static void
+atomic_relinquish_in_fence_fd(struct dri2_egl_surface *dri2_surf,
+                              struct swap_queue_elem *swap_data)
+{
+   /* KMS is now in control of the fence (post drmModeAtomicCommit) */
+   close(swap_data->kms_in_fence_fd);
+   swap_data->kms_in_fence_fd = -1;
+}
+
 static int
 display_output_atomic_flip(int fd, struct display_output *output, uint32_t fb_id,
                            uint32_t flags, void *flip_data)
@@ -395,6 +445,8 @@ display_output_atomic_flip(int fd, struct display_output *output, uint32_t fb_id
    const struct object_property obj_props[] = {
       object_property_set_named(output, plane, "FB_ID", fb_id),
    };
+   struct dri2_egl_surface *dri2_surf = flip_data;
+   struct swap_queue_elem *swap_data = dri2_surf->swap_data;
    int err;
 
    /* Reset atomic state */
@@ -405,13 +457,19 @@ display_output_atomic_flip(int fd, struct display_output *output, uint32_t fb_id
    if (err)
       return err;
 
+   display_output_atomic_add_in_fence(output, swap_data->kms_in_fence_fd);
+
    /*
     * Don't block - like drmModePageFlip, drmModeAtomicCommit will return
     * -EBUSY if the commit can't be queued in the kernel.
     */
    flags |= DRM_MODE_ATOMIC_NONBLOCK;
 
-   return drmModeAtomicCommit(fd, output->atomic_state, flags, flip_data);
+   err = drmModeAtomicCommit(fd, output->atomic_state, flags, flip_data);
+
+   atomic_relinquish_in_fence_fd(dri2_surf, swap_data);
+
+   return err;
 }
 
 static int
@@ -458,6 +516,8 @@ swap_enqueue_data(struct dri2_egl_surface *dri2_surf, uint32_t back_id,
    swap_data->swap_interval = interval;
    swap_data->fb_id = dri2_surf->back->fb_id;
    swap_data->back_id = back_id;
+
+   atomic_claim_in_fence_fd(dri2_surf, swap_data);
 
    dri2_surf->swap_queue_idx_tail++;
    dri2_surf->swap_queue_idx_tail %= ARRAY_SIZE(dri2_surf->swap_queue);
@@ -996,11 +1056,21 @@ err_unlock:
    return false;
 }
 
+static void surface_swap_queue_init(struct dri2_egl_surface *dri2_surf)
+{
+   struct swap_queue_elem *swap_queue = &dri2_surf->swap_queue[0];
+   const int num_el = ARRAY_SIZE(dri2_surf->swap_queue);
+
+   for (int i = 0; i < num_el; i++)
+      swap_queue[i].kms_in_fence_fd = -1;
+}
+
 static _EGLSurface *
 create_surface(_EGLDisplay *disp, _EGLConfig *config, EGLint type,
                const EGLint *attrib_list)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct display_output *output = &dri2_dpy->output;
    struct dri2_egl_config *dri2_config = dri2_egl_config(config);
    struct dri2_egl_surface *dri2_surf;
    const struct dri_config *dri_config;
@@ -1014,7 +1084,8 @@ create_surface(_EGLDisplay *disp, _EGLConfig *config, EGLint type,
    }
    surf = &dri2_surf->base;
 
-   if (!dri2_init_surface(surf, disp, type, config, attrib_list, false, NULL))
+   if (!dri2_init_surface(surf, disp, type, config, attrib_list,
+                          output->in_fence_supported, NULL))
       goto err_free_surface;
 
    dri_config = dri2_get_dri_config(dri2_config, type,
@@ -1036,6 +1107,8 @@ create_surface(_EGLDisplay *disp, _EGLConfig *config, EGLint type,
    assert(format_idx != -1);
 
    dri2_surf->format = dri2_null_formats[format_idx].pipe_format;
+
+   surface_swap_queue_init(dri2_surf);
 
    return surf;
 
@@ -1192,7 +1265,6 @@ dri2_null_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
 static EGLBoolean
 dri2_null_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
 {
-   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
    uint32_t back_id;
 
