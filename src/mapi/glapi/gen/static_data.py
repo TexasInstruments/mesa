@@ -1743,6 +1743,9 @@ offsets = {
     "DrawElementsInstancedNV" : 1707,
     "VertexAttribDivisorNV" : 1708,
     "GetIntegeri_vIMG": 1709,
+    "TexStorage1DEXT": 1710,
+    "TexStorage2DEXT": 1711,
+    "TexStorage3DEXT": 1712,
 }
 
 functions = [
