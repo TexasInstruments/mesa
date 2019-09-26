@@ -110,6 +110,7 @@ struct display_output {
    drmModeModeInfo        mode;
    uint32_t               mode_blob_id;
    unsigned               formats;
+   drmModeFormats        *in_formats;
    drmModeAtomicReq      *atomic_state;
 };
 #endif
@@ -274,6 +275,7 @@ struct dri2_egl_display
 
 #ifdef HAVE_NULL_PLATFORM
    bool                      atomic_enabled;
+   bool                      in_formats_enabled;
    struct display_output     output;
 #endif
 
@@ -372,6 +374,10 @@ struct dri2_egl_surface
 
 #if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_NULL_PLATFORM)
    int			  format;
+#endif
+#if defined(HAVE_NULL_PLATFORM)
+   uint64_t               *modifiers;
+   uint32_t               count_modifiers;
 #endif
 
 #ifdef HAVE_DRM_PLATFORM
