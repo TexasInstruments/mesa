@@ -338,6 +338,7 @@ struct dri2_egl_display {
 #ifdef HAVE_NULL_PLATFORM
    bool                      atomic_enabled;
    bool                      in_formats_enabled;
+   bool                      async_flip_enabled;
    struct display_output     output;
 #endif
 
@@ -456,7 +457,11 @@ struct dri2_egl_surface {
 #endif
       bool locked;
       int age;
+#ifdef HAVE_NULL_PLATFORM
+   } color_buffers[DRI2_SURFACE_NUM_COLOR_BUFFERS], *back, *current, front_buffer;
+#else
    } color_buffers[DRI2_SURFACE_NUM_COLOR_BUFFERS], *back, *current;
+#endif
 #endif
 
 #ifdef HAVE_ANDROID_PLATFORM
@@ -490,12 +495,13 @@ struct dri2_egl_surface {
 #endif
 
 #ifdef HAVE_NULL_PLATFORM
-   uint32_t                front_fb_id;
    struct swap_queue_elem  swap_queue[DRI2_SURFACE_NUM_COLOR_BUFFERS];
    struct swap_queue_elem  *swap_data;
    int                     swap_state;
    bool                    mutex_init;
    bool                    cond_init;
+   bool                    front_render_enabled;
+   bool                    front_render_init;
    bool                    cond_init_unlock_buffer;
 #endif
 
