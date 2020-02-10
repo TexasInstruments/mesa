@@ -35,6 +35,7 @@
 #include "eglcontext.h"
 #include "egldisplay.h"
 #include "eglcurrent.h"
+#include "egldriver.h"
 #include "eglsurface.h"
 #include "egllog.h"
 #include "util/macros.h"
@@ -670,8 +671,19 @@ _eglQueryContextRenderBuffer(_EGLContext *ctx)
 }
 
 
+static EGLint
+_eglQueryContextClientVersion(_EGLDisplay *disp, _EGLContext *ctx)
+{
+   EGLint version;
+
+   version = disp->Driver->QueryContextClientVersion(disp, ctx);
+
+   return (version) ? version : ctx->ClientMajorVersion;
+}
+
 EGLBoolean
-_eglQueryContext(_EGLContext *c, EGLint attribute, EGLint *value)
+_eglQueryContext(_EGLDisplay *disp, _EGLContext *c,
+                 EGLint attribute, EGLint *value)
 {
    if (!value)
       return _eglError(EGL_BAD_PARAMETER, "eglQueryContext");
@@ -688,7 +700,7 @@ _eglQueryContext(_EGLContext *c, EGLint attribute, EGLint *value)
       *value = c->Config ? c->Config->ConfigID : 0;
       break;
    case EGL_CONTEXT_CLIENT_VERSION:
-      *value = c->ClientMajorVersion;
+      *value = _eglQueryContextClientVersion(disp, c);
       break;
    case EGL_CONTEXT_CLIENT_TYPE:
       *value = c->ClientAPI;

@@ -74,7 +74,8 @@ _eglInitContext(_EGLContext *ctx, _EGLDisplay *disp,
 
 
 extern EGLBoolean
-_eglQueryContext(_EGLContext *ctx, EGLint attribute, EGLint *value);
+_eglQueryContext(_EGLDisplay *disp, _EGLContext *ctx,
+                 EGLint attribute, EGLint *value);
 
 
 extern EGLBoolean
