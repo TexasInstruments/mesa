@@ -1608,6 +1608,31 @@ dri2_make_current(_EGLDisplay *disp, _EGLSurface *dsurf, _EGLSurface *rsurf,
    return EGL_TRUE;
 }
 
+static EGLint
+dri2_query_context_client_version(_EGLDisplay *disp, _EGLContext *ctx)
+{
+   struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri_screen *screen = dri2_dpy->dri_screen_render_gpu;
+   struct pipe_screen *pscreen = screen->base.screen;
+   int version = 0;
+
+   switch (dri2_ctx->base.ClientAPI) {
+   case EGL_OPENGL_ES_API:
+      switch (dri2_ctx->base.ClientMajorVersion) {
+      case 2:
+         version = pscreen->caps.opengl_es2_context_client_version;
+         break;
+      default:
+         break;
+      }
+   default:
+      break;
+   }
+
+   return version;
+}
+
 struct dri_drawable *
 dri2_surface_get_dri_drawable(_EGLSurface *surf)
 {
@@ -3278,6 +3303,7 @@ const _EGLDriver _eglDriver = {
    .CreateContext = dri2_create_context,
    .DestroyContext = dri2_destroy_context,
    .MakeCurrent = dri2_make_current,
+   .QueryContextClientVersion = dri2_query_context_client_version,
    .CreateWindowSurface = dri2_create_window_surface,
    .CreatePixmapSurface = dri2_create_pixmap_surface,
    .CreatePbufferSurface = dri2_create_pbuffer_surface,

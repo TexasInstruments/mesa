@@ -192,6 +192,8 @@ u_init_pipe_screen_caps(struct pipe_screen *pscreen, int accel)
    caps->mesa_gl_interop = true;
    caps->context_no_error = true;
    caps->image_dmabuf_export = true;
+
+   caps->opengl_es2_context_client_version = false;
 }
 
 uint64_t u_default_get_timestamp(UNUSED struct pipe_screen *screen)
