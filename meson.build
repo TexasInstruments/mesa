@@ -459,6 +459,10 @@ else
   with_egl = false
 endif
 
+if with_egl and with_opengl and with_glx != 'disabled'
+   pre_args += '-DEGL_WITH_OPENGL'
+endif
+
 # Android uses emutls for versions <= P/28. For USE_ELF_TLS we need ELF TLS.
 use_elf_tls = false
 if not ['windows', 'freebsd', 'openbsd', 'haiku'].contains(host_machine.system()) and (not with_platform_android or get_option('platform-sdk-version') >= 29)
@@ -466,7 +470,7 @@ if not ['windows', 'freebsd', 'openbsd', 'haiku'].contains(host_machine.system()
   use_elf_tls = true
 endif
 
-if with_glx != 'disabled'
+if with_glx != 'disabled' and with_glx != 'null'
   if not (with_platform_x11 and with_any_opengl)
     error('Cannot build GLX support without X11 platform support and at least one OpenGL API')
   elif with_glx == 'gallium-xlib'
@@ -528,7 +532,7 @@ if with_any_vk and (with_platform_x11 and not with_dri3)
   error('Vulkan drivers require dri3 for X11 support')
 endif
 if with_dri
-  if with_glx == 'disabled' and not with_egl and not with_gbm
+  if (with_glx == 'disabled' or with_glx == 'null') and not with_egl and not with_gbm
     error('building dri drivers require at least one windowing system')
   endif
 endif
