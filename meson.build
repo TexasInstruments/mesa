@@ -1814,7 +1814,7 @@ endif
 # TODO: symbol mangling
 
 if with_platform_wayland
-  dep_wl_scanner = dependency('wayland-scanner', native: true)
+  dep_wl_scanner = dependency('wayland-scanner')
   prog_wl_scanner = find_program(dep_wl_scanner.get_pkgconfig_variable('wayland_scanner'))
   if dep_wl_scanner.version().version_compare('>= 1.15')
     wl_scanner_arg = 'private-code'
