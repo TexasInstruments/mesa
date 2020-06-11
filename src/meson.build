@@ -137,7 +137,7 @@ if with_gallium and (with_glx != 'disabled' or with_egl)
     subdir('mesa/state_tracker/tests')
   endif
 endif
-if with_glx == 'dri'
+if with_glx == 'dri' or with_glx == 'null'
   subdir('glx')
 endif
 

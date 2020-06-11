@@ -515,6 +515,10 @@ if with_egl and not _platforms.contains(egl_native_platform)
   error('-Degl-native-platform does not specify an enabled platform')
 endif
 
+if with_egl and with_opengl and with_glx != 'disabled'
+   pre_args += '-DEGL_WITH_OPENGL'
+endif
+
 if 'x11' in _platforms
   _platforms += 'xcb'
 endif
@@ -573,7 +577,7 @@ if not have_mtls_dialect
   endif
 endif
 
-if with_glx != 'disabled'
+if with_glx != 'disabled' and with_glx != 'null'
   if not (with_platform_x11 and with_any_opengl)
     error('Cannot build GLX support without X11 platform support and at least one OpenGL API')
   elif with_glx == 'xlib'
@@ -608,7 +612,7 @@ endif
 with_dri2 = (with_dri or with_any_vk) and (with_dri_platform == 'drm' or with_dri_platform == 'apple')
 
 if with_dri
-  if with_glx == 'disabled' and not with_egl and not with_gbm
+  if (with_glx == 'disabled' or with_glx == 'null') and not with_egl and not with_gbm
     error('building dri drivers require at least one windowing system')
   endif
 endif

@@ -100,7 +100,12 @@ endif
 if with_platform_windows
   glx_gallium_link += libgallium_wgl
 endif
-libglx = static_library(
+
+if with_glx == 'null'
+  libglx_link = []
+  libglx_null_link = [shared_glapi_lib]
+else
+  libglx = static_library(
   'glx',
   [files_libglx, glx_generated, main_dispatch_h],
   include_directories : [inc_include, inc_src, inc_glapi, inc_loader, inc_loader_x11,
@@ -114,7 +119,11 @@ libglx = static_library(
     idep_mesautil, idep_xmlconfig,
     dep_libdrm, dep_glproto, dep_x11, dep_xext, dep_glvnd, dep_xxf86vm, dep_xshmfence,
   ],
-)
+  )
+
+  libglx_link = [libglx]
+  libglx_null_link = []
+endif
 
 # libglapi_bridge contains GL functions that we need to export from libGL.so.
 # Other than that, we don't need it.
@@ -123,7 +132,8 @@ libgl_link = with_glvnd ? [] : [libglapi_bridge]
 libgl = shared_library(
   gl_lib_name,
   [],
-  link_whole : [libglx, libgl_link],
+  link_with : [libglx_null_link],
+  link_whole : [libglx_link, libgl_link],
   link_args : [ld_args_bsymbolic, ld_args_gc_sections, extra_ld_args_libgl],
   dependencies : [
     dep_libdrm, dep_dl, dep_m, dep_thread, dep_x11, dep_xcb_glx, dep_xcb,
