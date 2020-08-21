@@ -46,6 +46,38 @@
 #include "loader.h"
 #include "dri_util.h"
 
+static bool
+dri2_drm_alloc_front_image(struct dri2_egl_surface *dri2_surf)
+{
+   if (!dri2_surf->front_bo) {
+      struct dri2_egl_display *dri2_dpy =
+         dri2_egl_display(dri2_surf->base.Resource.Display);
+
+      struct gbm_dri_surface *surf = dri2_surf->gbm_surf;
+
+      dri2_surf->front_bo = gbm_bo_create(&dri2_dpy->gbm_dri->base,
+                                          surf->base.v0.width,
+                                          surf->base.v0.height,
+                                          surf->base.v0.format,
+                                          surf->base.v0.flags);
+      if (!dri2_surf->front_bo) {
+         _eglError(EGL_BAD_ALLOC, "failed to allocate front buffer");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static void
+dri2_drm_free_front_image(struct dri2_egl_surface *dri2_surf)
+{
+   if (dri2_surf->front_bo) {
+      gbm_bo_destroy(dri2_surf->front_bo);
+      dri2_surf->front_bo = NULL;
+   }
+}
+
 static struct gbm_bo *
 lock_front_buffer(struct gbm_surface *_surf)
 {
@@ -133,8 +165,8 @@ dri2_drm_config_is_compatible(struct dri2_egl_display *dri2_dpy,
 }
 
 static _EGLSurface *
-dri2_drm_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
-                               void *native_surface, const EGLint *attrib_list)
+dri2_drm_create_surface(_EGLDisplay *disp, EGLint type, _EGLConfig *conf,
+                        void *native_surface, const EGLint *attrib_list)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_config *dri2_conf = dri2_egl_config(conf);
@@ -149,11 +181,25 @@ dri2_drm_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
       return NULL;
    }
 
-   if (!dri2_init_surface(&dri2_surf->base, disp, EGL_WINDOW_BIT, conf,
+   if (!dri2_init_surface(&dri2_surf->base, disp, type, conf,
                           attrib_list, false, native_surface))
       goto cleanup_surf;
 
-   config = dri2_get_dri_config(dri2_conf, EGL_WINDOW_BIT,
+   if (type == EGL_PBUFFER_BIT) {
+      struct gbm_device *gbm = disp->PlatformDisplay;
+      _EGLSurface *surf = &dri2_surf->base;
+
+      assert(!surface);
+
+      surface = gbm_surface_create(gbm, surf->Width, surf->Height,
+                                   conf->NativeVisualID, GBM_BO_USE_RENDERING);
+      if (!surface) {
+	      _eglError(EGL_BAD_ALLOC, "Failed to allocate pbuffer GBM surface");
+	      goto cleanup_surf;
+      }
+   }
+
+   config = dri2_get_dri_config(dri2_conf, type,
                                 dri2_surf->base.GLColorspace);
 
    if (!config) {
@@ -179,9 +225,20 @@ dri2_drm_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
    return &dri2_surf->base;
 
 cleanup_surf:
+   if (type == EGL_PBUFFER_BIT && surface != NULL)
+      gbm_surface_destroy(surface);
+
    free(dri2_surf);
 
    return NULL;
+}
+
+static _EGLSurface *
+dri2_drm_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
+                               void *native_surface, const EGLint *attrib_list)
+{
+   return dri2_drm_create_surface(disp, EGL_WINDOW_BIT, conf,
+                                  native_surface, attrib_list);
 }
 
 static _EGLSurface *
@@ -198,6 +255,14 @@ dri2_drm_create_pixmap_surface(_EGLDisplay *disp, _EGLConfig *conf,
    return NULL;
 }
 
+static _EGLSurface *
+dri2_drm_create_pbuffer_surface(_EGLDisplay *disp, _EGLConfig *conf,
+                                const EGLint *attrib_list)
+{
+   return dri2_drm_create_surface(disp, EGL_PBUFFER_BIT, conf,
+                                  NULL, attrib_list);
+}
+
 static EGLBoolean
 dri2_drm_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
 {
@@ -209,6 +274,9 @@ dri2_drm_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
       if (dri2_surf->color_buffers[i].bo)
          gbm_bo_destroy(dri2_surf->color_buffers[i].bo);
    }
+
+   if (surf->Type == EGL_PBUFFER_BIT)
+      gbm_surface_destroy(&dri2_surf->gbm_surf->base);
 
    dri2_fini_surface(surf);
    free(surf);
@@ -291,12 +359,27 @@ dri2_drm_image_get_buffers(struct dri_drawable *driDrawable, unsigned int format
    struct dri2_egl_surface *dri2_surf = loaderPrivate;
    struct gbm_dri_bo *bo;
 
-   if (get_back_bo(dri2_surf) < 0)
-      return 0;
+   buffers->image_mask = 0;
+   buffers->front = NULL;
+   buffers->back = NULL;
 
-   bo = gbm_dri_bo(dri2_surf->back->bo);
-   buffers->image_mask = __DRI_IMAGE_BUFFER_BACK;
-   buffers->back = bo->image;
+   if (buffer_mask & __DRI_IMAGE_BUFFER_FRONT) {
+      if (!dri2_drm_alloc_front_image(dri2_surf))
+         return 0;
+
+      bo = gbm_dri_bo(dri2_surf->front_bo);
+      buffers->image_mask |= __DRI_IMAGE_BUFFER_FRONT;
+      buffers->front = bo->image;
+   }
+
+   if (buffer_mask & __DRI_IMAGE_BUFFER_BACK) {
+      if (get_back_bo(dri2_surf) < 0)
+         return 0;
+
+      bo = gbm_dri_bo(dri2_surf->back->bo);
+      buffers->image_mask |= __DRI_IMAGE_BUFFER_BACK;
+      buffers->back = bo->image;
+   }
 
    return 1;
 }
@@ -313,6 +396,9 @@ dri2_drm_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
+
+   if (dri2_surf->base.Type != EGL_WINDOW_BIT)
+      return EGL_TRUE;
 
    if (dri2_dpy->swrast_not_kms) {
       driSwapBuffers(dri2_surf->dri_drawable);
@@ -514,7 +600,8 @@ drm_add_configs_for_visuals(_EGLDisplay *disp)
          };
 
          dri2_conf =
-            dri2_add_config(disp, dri2_dpy->driver_configs[i], EGL_WINDOW_BIT,
+            dri2_add_config(disp, dri2_dpy->driver_configs[i],
+			    EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
                             attr_list);
          if (dri2_conf)
             format_count[j]++;
@@ -534,6 +621,7 @@ static const struct dri2_egl_display_vtbl dri2_drm_display_vtbl = {
    .authenticate = dri2_drm_authenticate,
    .create_window_surface = dri2_drm_create_window_surface,
    .create_pixmap_surface = dri2_drm_create_pixmap_surface,
+   .create_pbuffer_surface = dri2_drm_create_pbuffer_surface,
    .destroy_surface = dri2_drm_destroy_surface,
    .create_image = dri2_drm_create_image_khr,
    .swap_buffers = dri2_drm_swap_buffers,
