@@ -511,6 +511,14 @@ dri3_flush_swap_buffers(__DRIdrawable *driDrawable, void *loaderPrivate)
    loader_dri3_swapbuffer_barrier(draw);
 }
 
+static int
+dri3_get_display_fd(void *loaderPrivate)
+{
+   struct dri3_screen *psc = (struct dri3_screen *)loaderPrivate;
+
+   return psc->fd_display_gpu;
+}
+
 static void
 dri_set_background_context(void *loaderPrivate)
 {
@@ -529,11 +537,12 @@ dri_is_thread_safe(void *loaderPrivate)
 /* The image loader extension record for DRI3
  */
 static const __DRIimageLoaderExtension imageLoaderExtension = {
-   .base = { __DRI_IMAGE_LOADER, 3 },
+   .base = { __DRI_IMAGE_LOADER, 5 },
 
    .getBuffers          = loader_dri3_get_buffers,
    .flushFrontBuffer    = dri3_flush_front_buffer,
    .flushSwapBuffers    = dri3_flush_swap_buffers,
+   .getDisplayFD        = dri3_get_display_fd,
 };
 
 const __DRIuseInvalidateExtension dri3UseInvalidate = {

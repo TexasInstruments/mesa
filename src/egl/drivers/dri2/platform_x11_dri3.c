@@ -33,6 +33,7 @@
 
 #include <xf86drm.h>
 #include "util/macros.h"
+#include "util/os_file.h"
 
 #include "egl_dri2.h"
 #include "platform_x11_dri3.h"
@@ -425,11 +426,21 @@ dri3_flush_front_buffer(__DRIdrawable *driDrawable, void *loaderPrivate)
               "FIXME: egl/x11 doesn't support front buffer rendering.");
 }
 
+static int
+dri3_get_display_fd(void *loaderPrivate)
+{
+   _EGLDisplay *disp = loaderPrivate;
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+
+   return dri2_dpy->fd_display_gpu;
+}
+
 const __DRIimageLoaderExtension dri3_image_loader_extension = {
-   .base = {__DRI_IMAGE_LOADER, 1},
+   .base = {__DRI_IMAGE_LOADER, 5},
 
    .getBuffers = loader_dri3_get_buffers,
    .flushFrontBuffer = dri3_flush_front_buffer,
+   .getDisplayFD = dri3_get_display_fd,
 };
 
 static EGLBoolean

@@ -1540,21 +1540,32 @@ dri2_wl_get_capability(void *loaderPrivate, enum dri_loader_cap cap)
    }
 }
 
+static int
+dri2_wl_get_display_fd(void *loaderPrivate)
+{
+   _EGLDisplay *disp = loaderPrivate;
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+
+   return dri2_dpy->fd_display_gpu;
+}
+
 static const __DRIdri2LoaderExtension dri2_loader_extension = {
-   .base = {__DRI_DRI2_LOADER, 4},
+   .base = {__DRI_DRI2_LOADER, 6},
 
    .getBuffers = dri2_wl_get_buffers,
    .flushFrontBuffer = dri2_wl_flush_front_buffer,
    .getBuffersWithFormat = dri2_wl_get_buffers_with_format,
    .getCapability = dri2_wl_get_capability,
+   .getDisplayFD = dri2_wl_get_display_fd,
 };
 
 static const __DRIimageLoaderExtension image_loader_extension = {
-   .base = {__DRI_IMAGE_LOADER, 2},
+   .base = {__DRI_IMAGE_LOADER, 5},
 
    .getBuffers = image_get_buffers,
    .flushFrontBuffer = dri2_wl_flush_front_buffer,
    .getCapability = dri2_wl_get_capability,
+   .getDisplayFD = dri2_wl_get_display_fd,
 };
 
 static void
