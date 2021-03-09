@@ -1325,6 +1325,17 @@ dri2_display_destroy(_EGLDisplay *disp)
          dri2_dpy->vtbl->close_screen_notify(disp);
       dri2_dpy->core->destroyScreen(dri2_dpy->dri_screen);
    }
+
+   switch (disp->Platform) {
+   case _EGL_PLATFORM_WAYLAND:
+   case _EGL_PLATFORM_X11:
+      if (dri2_dpy->fd_dpy >= 0 && dri2_dpy->fd_dpy != dri2_dpy->fd)
+         close(dri2_dpy->fd_dpy);
+      break;
+   default:
+      break;
+   }
+
    if (dri2_dpy->fd >= 0)
       close(dri2_dpy->fd);
 
@@ -3440,6 +3451,7 @@ dri2_bind_wayland_display_wl(_EGLDisplay *disp, struct wl_display *wl_dpy)
    };
    int flags = 0;
    uint64_t cap;
+   char *device_name;
 
    if (dri2_dpy->wl_server_drm)
            return EGL_FALSE;
@@ -3450,8 +3462,12 @@ dri2_bind_wayland_display_wl(_EGLDisplay *disp, struct wl_display *wl_dpy)
        dri2_dpy->image->createImageFromFds != NULL)
       flags |= WAYLAND_DRM_PRIME;
 
+   device_name = drmGetRenderDeviceNameFromFd(dri2_dpy->fd_dpy);
+   if (!device_name)
+      device_name = strdup(dri2_dpy->device_name);
+
    dri2_dpy->wl_server_drm =
-           wayland_drm_init(wl_dpy, dri2_dpy->device_name,
+           wayland_drm_init(wl_dpy, device_name,
                             &wl_drm_callbacks, disp, flags);
 
    if (!dri2_dpy->wl_server_drm)

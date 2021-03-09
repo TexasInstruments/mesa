@@ -1274,6 +1274,7 @@ dri2_initialize_x11_swrast(_EGLDisplay *disp)
       return _eglError(EGL_BAD_ALLOC, "eglInitialize");
 
    dri2_dpy->fd = -1;
+   dri2_dpy->fd_dpy = -1;
    if (!dri2_get_xcb_connection(disp, dri2_dpy))
       goto cleanup;
 
@@ -1361,6 +1362,7 @@ dri2_initialize_x11_dri3(_EGLDisplay *disp)
       return _eglError(EGL_BAD_ALLOC, "eglInitialize");
 
    dri2_dpy->fd = -1;
+   dri2_dpy->fd_dpy = -1;
    if (!dri2_get_xcb_connection(disp, dri2_dpy))
       goto cleanup;
 
@@ -1469,6 +1471,7 @@ dri2_initialize_x11_dri2(_EGLDisplay *disp)
       return _eglError(EGL_BAD_ALLOC, "eglInitialize");
 
    dri2_dpy->fd = -1;
+   dri2_dpy->fd_dpy = -1;
    if (!dri2_get_xcb_connection(disp, dri2_dpy))
       goto cleanup;
 
