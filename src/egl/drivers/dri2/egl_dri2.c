@@ -3564,7 +3564,7 @@ dri2_bind_wayland_display_wl(_EGLDisplay *disp, struct wl_display *wl_dpy)
    if (dri2_dpy->wl_server_drm)
       goto fail;
 
-   device_name = drmGetRenderDeviceNameFromFd(dri2_dpy->fd_render_gpu);
+   device_name = drmGetRenderDeviceNameFromFd(dri2_dpy->fd_display_gpu);
    if (!device_name)
       device_name = strdup(dri2_dpy->device_name);
    if (!device_name)
