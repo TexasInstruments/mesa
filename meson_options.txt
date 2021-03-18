@@ -233,7 +233,8 @@ option(
   value : ['auto'],
   choices : ['auto', 'amd', 'broadcom', 'freedreno', 'intel', 'intel_hasvk',
              'panfrost', 'swrast', 'virtio', 'imagination-experimental',
-             'microsoft-experimental', 'nouveau-experimental', 'all'],
+             'microsoft-experimental', 'nouveau-experimental', 'pvr',
+             'all'],
   description : 'List of vulkan drivers to build. If this is set to auto ' +
                 'all drivers applicable to the target OS/architecture ' +
                 'will be built'
@@ -257,6 +258,15 @@ option(
   value : false,
   description : 'Enable Services backend for Imagination Technologies ' +
                 'vulkan driver',
+)
+
+option(
+  'pvr-vulkan-display',
+  type : 'string',
+  value : '',
+  description : 'PVR Vulkan display driver name. This must match the name ' +
+                'of the kernel display driver. It defaults to the Gallium ' +
+                'PVR alias if that is set'
 )
 
 option(

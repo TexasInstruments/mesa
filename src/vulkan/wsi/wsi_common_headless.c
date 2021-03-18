@@ -35,6 +35,7 @@
 #include "wsi_common_entrypoints.h"
 #include "wsi_common_private.h"
 #include "wsi_common_queue.h"
+#include "wsi_common_headless.h"
 
 #include "drm-uapi/drm_fourcc.h"
 
@@ -100,8 +101,7 @@ wsi_headless_surface_get_capabilities(VkIcdSurfaceBase *surface,
 
    caps->supportedUsageFlags = wsi_caps_get_image_usage();
 
-   VK_FROM_HANDLE(vk_physical_device, pdevice, wsi_device->pdevice);
-   if (pdevice->supported_extensions.EXT_attachment_feedback_loop_layout)
+   if (wsi_device->ext_attachment_feedback_loop_layout)
       caps->supportedUsageFlags |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
 
    return VK_SUCCESS;
@@ -554,17 +554,15 @@ wsi_headless_finish_wsi(struct wsi_device *wsi_device,
    vk_free(alloc, wsi);
 }
 
-VkResult wsi_CreateHeadlessSurfaceEXT(
-    VkInstance                                  _instance,
-    const VkHeadlessSurfaceCreateInfoEXT*       pCreateInfo,
-    const VkAllocationCallbacks*                pAllocator,
-    VkSurfaceKHR*                               pSurface)
+VkResult wsi_create_headless_surface(
+    const VkAllocationCallbacks *allocator,
+    const VkHeadlessSurfaceCreateInfoEXT *pCreateInfo,
+    VkSurfaceKHR *pSurface)
 {
-   VK_FROM_HANDLE(vk_instance, instance, _instance);
    VkIcdSurfaceHeadless *surface;
 
-   surface = vk_alloc2(&instance->alloc, pAllocator, sizeof *surface, 8,
-                       VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   surface = vk_alloc(allocator, sizeof *surface, 8,
+                      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (surface == NULL)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
@@ -572,4 +570,23 @@ VkResult wsi_CreateHeadlessSurfaceEXT(
 
    *pSurface = VkIcdSurfaceBase_to_handle(&surface->base);
    return VK_SUCCESS;
+}
+
+VkResult wsi_CreateHeadlessSurfaceEXT(
+    VkInstance                                  _instance,
+    const VkHeadlessSurfaceCreateInfoEXT*       pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSurfaceKHR*                               pSurface)
+{
+   VK_FROM_HANDLE(vk_instance, instance, _instance);
+   const VkAllocationCallbacks *allocator;
+
+   if (pAllocator)
+     allocator = pAllocator;
+   else
+     allocator = &instance->alloc;
+
+   return wsi_create_headless_surface(allocator,
+                                      pCreateInfo,
+                                      pSurface);
 }
