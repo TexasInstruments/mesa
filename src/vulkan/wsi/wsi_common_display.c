@@ -441,20 +441,19 @@ wsi_display_fill_in_display_properties(struct wsi_display_connector *connector,
    properties->persistentContent = VK_FALSE;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice,
-                                          uint32_t *pPropertyCount,
-                                          VkDisplayPropertiesKHR *pProperties)
+VkResult
+wsi_display_get_physical_device_display_properties(
+   VkPhysicalDevice physicalDevice,
+   struct wsi_device *wsi_device,
+   uint32_t *pPropertyCount,
+   VkDisplayPropertiesKHR *pProperties)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
    if (pProperties == NULL) {
-      return wsi_GetPhysicalDeviceDisplayProperties2KHR(physicalDevice,
-                                                        pPropertyCount,
-                                                        NULL);
+      return wsi_display_get_physical_device_display_properties2(
+            physicalDevice, wsi_device, pPropertyCount, NULL);
    } else {
       /* If we're actually returning properties, allocate a temporary array of
        * VkDisplayProperties2KHR structs, call properties2 to fill them out,
@@ -472,9 +471,8 @@ wsi_GetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice,
       for (uint32_t i = 0; i < *pPropertyCount; i++)
          props2[i].sType = VK_STRUCTURE_TYPE_DISPLAY_PROPERTIES_2_KHR;
 
-      VkResult result =
-         wsi_GetPhysicalDeviceDisplayProperties2KHR(physicalDevice,
-                                                    pPropertyCount, props2);
+      VkResult result = wsi_display_get_physical_device_display_properties2(
+            physicalDevice, wsi_device, pPropertyCount, props2);
 
       if (result == VK_SUCCESS || result == VK_INCOMPLETE) {
          for (uint32_t i = 0; i < *pPropertyCount; i++)
@@ -487,14 +485,23 @@ wsi_GetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice,
    }
 }
 
-static VkResult
-wsi_get_connectors(VkPhysicalDevice physicalDevice)
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice,
+                                          uint32_t *pPropertyCount,
+                                          VkDisplayPropertiesKHR *pProperties)
 {
    VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
    struct wsi_device *wsi_device = pdevice->wsi_device;
-   struct wsi_display *wsi =
-      (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
+   return wsi_display_get_physical_device_display_properties(physicalDevice,
+                                                             wsi_device,
+                                                             pPropertyCount,
+                                                             pProperties);
+}
+
+static VkResult
+wsi_get_connectors(struct wsi_device *wsi_device, struct wsi_display *wsi)
+{
    if (wsi->fd < 0)
       return VK_SUCCESS;
 
@@ -518,18 +525,18 @@ wsi_get_connectors(VkPhysicalDevice physicalDevice)
    return VK_SUCCESS;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetPhysicalDeviceDisplayProperties2KHR(VkPhysicalDevice physicalDevice,
-                                           uint32_t *pPropertyCount,
-                                           VkDisplayProperties2KHR *pProperties)
+VkResult
+wsi_display_get_physical_device_display_properties2(
+   VkPhysicalDevice physicalDevice,
+   struct wsi_device *wsi_device,
+   uint32_t *pPropertyCount,
+   VkDisplayProperties2KHR *pProperties)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
    /* Get current information */
-   VkResult result = wsi_get_connectors(physicalDevice);
+   VkResult result = wsi_get_connectors(wsi_device, wsi);
    if (result != VK_SUCCESS)
       goto bail;
 
@@ -549,6 +556,20 @@ wsi_GetPhysicalDeviceDisplayProperties2KHR(VkPhysicalDevice physicalDevice,
 bail:
    *pPropertyCount = 0;
    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetPhysicalDeviceDisplayProperties2KHR(VkPhysicalDevice physicalDevice,
+                                           uint32_t *pPropertyCount,
+                                           VkDisplayProperties2KHR *pProperties)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_get_physical_device_display_properties2(physicalDevice,
+                                                              wsi_device,
+                                                              pPropertyCount,
+                                                              pProperties);
 }
 
 /*
@@ -571,17 +592,17 @@ wsi_display_fill_in_display_plane_properties(
    }
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetPhysicalDeviceDisplayPlanePropertiesKHR(VkPhysicalDevice physicalDevice,
-                                               uint32_t *pPropertyCount,
-                                               VkDisplayPlanePropertiesKHR *pProperties)
+VkResult
+wsi_display_get_physical_device_display_plane_properties(
+   VkPhysicalDevice physicalDevice,
+   struct wsi_device *wsi_device,
+   uint32_t *pPropertyCount,
+   VkDisplayPlanePropertiesKHR *pProperties)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
-   VkResult result = wsi_get_connectors(physicalDevice);
+   VkResult result = wsi_get_connectors(wsi_device, wsi);
    if (result != VK_SUCCESS)
       goto bail;
 
@@ -605,17 +626,32 @@ bail:
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetPhysicalDeviceDisplayPlaneProperties2KHR(VkPhysicalDevice physicalDevice,
-                                                uint32_t *pPropertyCount,
-                                                VkDisplayPlaneProperties2KHR *pProperties)
+wsi_GetPhysicalDeviceDisplayPlanePropertiesKHR(VkPhysicalDevice physicalDevice,
+                                               uint32_t *pPropertyCount,
+                                               VkDisplayPlanePropertiesKHR *pProperties)
 {
    VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
    struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_get_physical_device_display_plane_properties(
+            physicalDevice,
+            wsi_device,
+            pPropertyCount,
+            pProperties);
+}
+
+VkResult
+wsi_display_get_physical_device_display_plane_properties2(
+   VkPhysicalDevice physicalDevice,
+   struct wsi_device *wsi_device,
+   uint32_t *pPropertyCount,
+   VkDisplayPlaneProperties2KHR *pProperties)
+{
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
    /* Get current information */
-   VkResult result = wsi_get_connectors(physicalDevice);
+   VkResult result = wsi_get_connectors(wsi_device, wsi);
    if (result != VK_SUCCESS)
       goto bail;
 
@@ -634,18 +670,34 @@ bail:
    return result;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetPhysicalDeviceDisplayPlaneProperties2KHR(VkPhysicalDevice physicalDevice,
+                                                uint32_t *pPropertyCount,
+                                                VkDisplayPlaneProperties2KHR *pProperties)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_get_physical_device_display_plane_properties2(
+            physicalDevice,
+            wsi_device,
+            pPropertyCount,
+            pProperties);
+}
+
+
 /*
  * Implement vkGetDisplayPlaneSupportedDisplaysKHR (VK_KHR_display)
  */
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDevice physicalDevice,
-                                        uint32_t planeIndex,
-                                        uint32_t *pDisplayCount,
-                                        VkDisplayKHR *pDisplays)
+VkResult
+wsi_display_get_display_plane_supported_displays(
+   VkPhysicalDevice physicalDevice,
+   struct wsi_device *wsi_device,
+   uint32_t planeIndex,
+   uint32_t *pDisplayCount,
+   VkDisplayKHR *pDisplays)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
@@ -662,6 +714,22 @@ wsi_GetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDevice physicalDevice,
       c++;
    }
    return vk_outarray_status(&conn);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDevice physicalDevice,
+                                        uint32_t planeIndex,
+                                        uint32_t *pDisplayCount,
+                                        VkDisplayKHR *pDisplays)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_get_display_plane_supported_displays(physicalDevice,
+                                                           wsi_device,
+                                                           planeIndex,
+                                                           pDisplayCount,
+                                                           pDisplays);
 }
 
 /*
@@ -683,11 +751,12 @@ wsi_display_fill_in_display_mode_properties(
       (uint32_t) (wsi_display_mode_refresh(display_mode) * 1000 + 0.5);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetDisplayModePropertiesKHR(VkPhysicalDevice physicalDevice,
-                                VkDisplayKHR display,
-                                uint32_t *pPropertyCount,
-                                VkDisplayModePropertiesKHR *pProperties)
+VkResult
+wsi_display_get_display_mode_properties(VkPhysicalDevice physicalDevice,
+                                        struct wsi_device *wsi_device,
+                                        VkDisplayKHR display,
+                                        uint32_t *pPropertyCount,
+                                        VkDisplayModePropertiesKHR *pProperties)
 {
    struct wsi_display_connector *connector =
       wsi_display_connector_from_handle(display);
@@ -711,10 +780,27 @@ wsi_GetDisplayModePropertiesKHR(VkPhysicalDevice physicalDevice,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetDisplayModeProperties2KHR(VkPhysicalDevice physicalDevice,
-                                 VkDisplayKHR display,
-                                 uint32_t *pPropertyCount,
-                                 VkDisplayModeProperties2KHR *pProperties)
+wsi_GetDisplayModePropertiesKHR(VkPhysicalDevice physicalDevice,
+                                VkDisplayKHR display,
+                                uint32_t *pPropertyCount,
+                                VkDisplayModePropertiesKHR *pProperties)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_get_display_mode_properties(physicalDevice,
+                                                  wsi_device,
+                                                  display,
+                                                  pPropertyCount,
+                                                  pProperties);
+}
+
+VkResult
+wsi_display_get_display_mode_properties2(VkPhysicalDevice physicalDevice,
+                                         struct wsi_device *wsi_device,
+                                         VkDisplayKHR display,
+                                         uint32_t *pPropertyCount,
+                                         VkDisplayModeProperties2KHR *pProperties)
 {
    struct wsi_display_connector *connector =
       wsi_display_connector_from_handle(display);
@@ -733,6 +819,22 @@ wsi_GetDisplayModeProperties2KHR(VkPhysicalDevice physicalDevice,
    return vk_outarray_status(&conn);
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetDisplayModeProperties2KHR(VkPhysicalDevice physicalDevice,
+                                 VkDisplayKHR display,
+                                 uint32_t *pPropertyCount,
+                                 VkDisplayModeProperties2KHR *pProperties)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_get_display_mode_properties2(physicalDevice,
+                                                   wsi_device,
+                                                   display,
+                                                   pPropertyCount,
+                                                   pProperties);
+}
+
 static bool
 wsi_display_mode_matches_vk(wsi_display_mode *wsi,
                             const VkDisplayModeParametersKHR *vk)
@@ -745,12 +847,13 @@ wsi_display_mode_matches_vk(wsi_display_mode *wsi,
 /*
  * Implement vkCreateDisplayModeKHR (VK_KHR_display)
  */
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_CreateDisplayModeKHR(VkPhysicalDevice physicalDevice,
-                         VkDisplayKHR display,
-                         const VkDisplayModeCreateInfoKHR *pCreateInfo,
-                         const VkAllocationCallbacks *pAllocator,
-                         VkDisplayModeKHR *pMode)
+VkResult
+wsi_display_create_display_mode(VkPhysicalDevice physicalDevice,
+                                struct wsi_device *wsi_device,
+                                VkDisplayKHR display,
+                                const VkDisplayModeCreateInfoKHR *pCreateInfo,
+                                const VkAllocationCallbacks *pAllocator,
+                                VkDisplayModeKHR *pMode)
 {
    struct wsi_display_connector *connector =
       wsi_display_connector_from_handle(display);
@@ -774,11 +877,31 @@ wsi_CreateDisplayModeKHR(VkPhysicalDevice physicalDevice,
    return VK_ERROR_INITIALIZATION_FAILED;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_CreateDisplayModeKHR(VkPhysicalDevice physicalDevice,
+                         VkDisplayKHR display,
+                         const VkDisplayModeCreateInfoKHR *pCreateInfo,
+                         const VkAllocationCallbacks *pAllocator,
+                         VkDisplayModeKHR *pMode)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_display_create_display_mode(physicalDevice,
+                                          wsi_device,
+                                          display,
+                                          pCreateInfo,
+                                          pAllocator,
+                                          pMode);
+}
+
+
 /*
  * Implement vkGetDisplayPlaneCapabilities
  */
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice physicalDevice,
+VkResult
+wsi_get_display_plane_capabilities(VkPhysicalDevice physicalDevice,
+                                   struct wsi_device *wsi_device,
                                    VkDisplayModeKHR _mode,
                                    uint32_t planeIndex,
                                    VkDisplayPlaneCapabilitiesKHR *pCapabilities)
@@ -807,15 +930,33 @@ wsi_GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice physicalDevice,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetDisplayPlaneCapabilities2KHR(VkPhysicalDevice physicalDevice,
-                                    const VkDisplayPlaneInfo2KHR *pDisplayPlaneInfo,
-                                    VkDisplayPlaneCapabilities2KHR *pCapabilities)
+wsi_GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice physicalDevice,
+                                   VkDisplayModeKHR _mode,
+                                   uint32_t planeIndex,
+                                   VkDisplayPlaneCapabilitiesKHR *pCapabilities)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_get_display_plane_capabilities(physicalDevice,
+                                             wsi_device,
+                                             _mode,
+                                             planeIndex,
+                                             pCapabilities);
+}
+
+VkResult
+wsi_get_display_plane_capabilities2(
+   VkPhysicalDevice physicalDevice,
+   struct wsi_device *wsi_device,
+   const VkDisplayPlaneInfo2KHR *pDisplayPlaneInfo,
+   VkDisplayPlaneCapabilities2KHR *pCapabilities)
 {
    assert(pCapabilities->sType ==
           VK_STRUCTURE_TYPE_DISPLAY_PLANE_CAPABILITIES_2_KHR);
 
    VkResult result =
-      wsi_GetDisplayPlaneCapabilitiesKHR(physicalDevice,
+      wsi_get_display_plane_capabilities(physicalDevice, wsi_device,
                                          pDisplayPlaneInfo->mode,
                                          pDisplayPlaneInfo->planeIndex,
                                          &pCapabilities->capabilities);
@@ -838,18 +979,31 @@ wsi_GetDisplayPlaneCapabilities2KHR(VkPhysicalDevice physicalDevice,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_CreateDisplayPlaneSurfaceKHR(VkInstance _instance,
-                                 const VkDisplaySurfaceCreateInfoKHR *pCreateInfo,
-                                 const VkAllocationCallbacks *pAllocator,
-                                 VkSurfaceKHR *pSurface)
+wsi_GetDisplayPlaneCapabilities2KHR(VkPhysicalDevice physicalDevice,
+                                    const VkDisplayPlaneInfo2KHR *pDisplayPlaneInfo,
+                                    VkDisplayPlaneCapabilities2KHR *pCapabilities)
 {
-   VK_FROM_HANDLE(vk_instance, instance, _instance);
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_get_display_plane_capabilities2(physicalDevice,
+                                              wsi_device,
+                                              pDisplayPlaneInfo,
+                                              pCapabilities);
+}
+
+VkResult
+wsi_create_display_surface(VkInstance instance,
+                           const VkAllocationCallbacks *allocator,
+                           const VkDisplaySurfaceCreateInfoKHR *pCreateInfo,
+                           VkSurfaceKHR *pSurface)
+{
    VkIcdSurfaceDisplay *surface;
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR);
 
-   surface = vk_zalloc2(&instance->alloc, pAllocator, sizeof(*surface), 8,
-                        VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   surface = vk_zalloc(allocator, sizeof(*surface), 8,
+                       VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (surface == NULL)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
@@ -867,6 +1021,27 @@ wsi_CreateDisplayPlaneSurfaceKHR(VkInstance _instance,
 
    return VK_SUCCESS;
 }
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_CreateDisplayPlaneSurfaceKHR(VkInstance _instance,
+                                 const VkDisplaySurfaceCreateInfoKHR *pCreateInfo,
+                                 const VkAllocationCallbacks *pAllocator,
+                                 VkSurfaceKHR *pSurface)
+{
+   VK_FROM_HANDLE(vk_instance, instance, _instance);
+   const VkAllocationCallbacks *allocator;
+
+   if (pAllocator)
+     allocator = pAllocator;
+   else
+     allocator = &instance->alloc;
+
+   return wsi_create_display_surface(_instance,
+                                     allocator,
+                                     pCreateInfo,
+                                     pSurface);
+}
+
 
 static VkResult
 wsi_display_surface_get_support(VkIcdSurfaceBase *surface,
@@ -914,8 +1089,7 @@ wsi_display_surface_get_capabilities(VkIcdSurfaceBase *surface_base,
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
       VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 
-   VK_FROM_HANDLE(vk_physical_device, pdevice, wsi_device->pdevice);
-   if (pdevice->supported_extensions.EXT_attachment_feedback_loop_layout)
+   if (wsi_device->ext_attachment_feedback_loop_layout)
       caps->supportedUsageFlags |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
 
    return VK_SUCCESS;
@@ -2369,12 +2543,11 @@ wsi_display_finish_wsi(struct wsi_device *wsi_device,
 /*
  * Implement vkReleaseDisplay
  */
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_ReleaseDisplayEXT(VkPhysicalDevice physicalDevice,
-                      VkDisplayKHR display)
+VkResult
+wsi_release_display(VkPhysicalDevice            physicalDevice,
+                    struct wsi_device           *wsi_device,
+                    VkDisplayKHR                display)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
 
@@ -2791,12 +2964,23 @@ wsi_display_find_crtc_for_output(xcb_connection_t *connection,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_AcquireXlibDisplayEXT(VkPhysicalDevice physicalDevice,
-                          Display *dpy,
-                          VkDisplayKHR display)
+wsi_ReleaseDisplayEXT(VkPhysicalDevice physicalDevice,
+                      VkDisplayKHR display)
 {
    VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
    struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_release_display(physicalDevice,
+                              wsi_device,
+                              display);
+}
+
+VkResult
+wsi_acquire_xlib_display(VkPhysicalDevice physicalDevice,
+                         struct wsi_device *wsi_device,
+                         Display *dpy,
+                         VkDisplayKHR display)
+{
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
    xcb_connection_t *connection = XGetXCBConnection(dpy);
@@ -2855,13 +3039,26 @@ wsi_AcquireXlibDisplayEXT(VkPhysicalDevice physicalDevice,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetRandROutputDisplayEXT(VkPhysicalDevice physicalDevice,
+wsi_AcquireXlibDisplayEXT(VkPhysicalDevice physicalDevice,
+                          Display *dpy,
+                          VkDisplayKHR display)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_acquire_xlib_display(physicalDevice,
+                                   wsi_device,
+                                   dpy,
+                                   display);
+}
+
+VkResult
+wsi_get_randr_output_display(VkPhysicalDevice physicalDevice,
+                             struct wsi_device *wsi_device,
                              Display *dpy,
                              RROutput rrOutput,
                              VkDisplayKHR *pDisplay)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
    xcb_connection_t *connection = XGetXCBConnection(dpy);
    struct wsi_display_connector *connector =
       wsi_display_get_output(wsi_device, connection,
@@ -2874,16 +3071,31 @@ wsi_GetRandROutputDisplayEXT(VkPhysicalDevice physicalDevice,
    return VK_SUCCESS;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetRandROutputDisplayEXT(VkPhysicalDevice physicalDevice,
+                             Display *dpy,
+                             RROutput rrOutput,
+                             VkDisplayKHR *pDisplay)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_get_randr_output_display(physicalDevice,
+                                       wsi_device,
+                                       dpy,
+                                       rrOutput,
+                                       pDisplay);
+}
+
 #endif
 
 /* VK_EXT_display_control */
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_DisplayPowerControlEXT(VkDevice _device,
-                           VkDisplayKHR display,
-                           const VkDisplayPowerInfoEXT *pDisplayPowerInfo)
+VkResult
+wsi_display_power_control(VkDevice _device,
+                          struct wsi_device *wsi_device,
+                          VkDisplayKHR display,
+                          const VkDisplayPowerInfoEXT *pDisplayPowerInfo)
 {
-   VK_FROM_HANDLE(vk_device, device, _device);
-   struct wsi_device *wsi_device = device->physical->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
    struct wsi_display_connector *connector =
@@ -2911,6 +3123,20 @@ wsi_DisplayPowerControlEXT(VkDevice _device,
    return VK_SUCCESS;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_DisplayPowerControlEXT(VkDevice _device,
+                           VkDisplayKHR display,
+                           const VkDisplayPowerInfoEXT *pDisplayPowerInfo)
+{
+   VK_FROM_HANDLE(vk_device, device, _device);
+   struct wsi_device *wsi_device = device->physical->wsi_device;
+
+   return wsi_display_power_control(_device,
+                                    wsi_device,
+                                    display,
+                                    pDisplayPowerInfo);
+}
+
 VkResult
 wsi_register_device_event(VkDevice _device,
                           struct wsi_device *wsi_device,
@@ -2919,7 +3145,6 @@ wsi_register_device_event(VkDevice _device,
                           struct vk_sync **sync_out,
                           int sync_fd)
 {
-   VK_FROM_HANDLE(vk_device, device, _device);
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
    VkResult ret = VK_SUCCESS;
@@ -2953,6 +3178,8 @@ wsi_register_device_event(VkDevice _device,
    pthread_mutex_unlock(&wsi->wait_mutex);
 
    if (sync_out) {
+      VK_FROM_HANDLE(vk_device, device, _device);
+
       ret = wsi_display_sync_create(device, fence, sync_out);
       if (ret != VK_SUCCESS)
          wsi_display_fence_destroy(fence);
@@ -3001,7 +3228,6 @@ wsi_register_display_event(VkDevice _device,
                            struct vk_sync **sync_out,
                            int sync_fd)
 {
-   VK_FROM_HANDLE(vk_device, device, _device);
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
    struct wsi_display_fence *fence;
@@ -3020,6 +3246,8 @@ wsi_register_display_event(VkDevice _device,
 
       if (ret == VK_SUCCESS) {
          if (sync_out) {
+            VK_FROM_HANDLE(vk_device, device, _device);
+
             ret = wsi_display_sync_create(device, fence, sync_out);
             if (ret != VK_SUCCESS)
                wsi_display_fence_destroy(fence);
@@ -3078,14 +3306,13 @@ wsi_display_setup_syncobj_fd(struct wsi_device *wsi_device,
    wsi->syncobj_fd = fd;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetSwapchainCounterEXT(VkDevice _device,
-                           VkSwapchainKHR _swapchain,
-                           VkSurfaceCounterFlagBitsEXT counter,
-                           uint64_t *pCounterValue)
+VkResult
+wsi_get_swapchain_counter(VkDevice _device,
+                          struct wsi_device *wsi_device,
+                          VkSwapchainKHR _swapchain,
+                          VkSurfaceCounterFlagBitsEXT counter,
+                          uint64_t *pCounterValue)
 {
-   VK_FROM_HANDLE(vk_device, device, _device);
-   struct wsi_device *wsi_device = device->physical->wsi_device;
    struct wsi_display *wsi =
       (struct wsi_display *) wsi_device->wsi[VK_ICD_WSI_PLATFORM_DISPLAY];
    struct wsi_display_swapchain *swapchain =
@@ -3110,13 +3337,27 @@ wsi_GetSwapchainCounterEXT(VkDevice _device,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_AcquireDrmDisplayEXT(VkPhysicalDevice physicalDevice,
-                         int32_t drmFd,
-                         VkDisplayKHR display)
+wsi_GetSwapchainCounterEXT(VkDevice _device,
+                           VkSwapchainKHR _swapchain,
+                           VkSurfaceCounterFlagBitsEXT counter,
+                           uint64_t *pCounterValue)
 {
-   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
-   struct wsi_device *wsi_device = pdevice->wsi_device;
+   VK_FROM_HANDLE(vk_device, device, _device);
+   struct wsi_device *wsi_device = device->physical->wsi_device;
 
+   return wsi_get_swapchain_counter(_device,
+                                    wsi_device,
+                                    _swapchain,
+                                    counter,
+                                    pCounterValue);
+}
+
+VkResult
+wsi_acquire_drm_display(VkPhysicalDevice     physicalDevice,
+                        struct wsi_device    *wsi_device,
+                        int                  drmFd,
+                        VkDisplayKHR         display)
+{
    if (!wsi_device_matches_drm_fd(wsi_device, drmFd))
       return VK_ERROR_UNKNOWN;
 
@@ -3143,14 +3384,26 @@ wsi_AcquireDrmDisplayEXT(VkPhysicalDevice physicalDevice,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetDrmDisplayEXT(VkPhysicalDevice physicalDevice,
-                     int32_t drmFd,
-                     uint32_t connectorId,
-                     VkDisplayKHR *pDisplay)
+wsi_AcquireDrmDisplayEXT(VkPhysicalDevice physicalDevice,
+                         int32_t drmFd,
+                         VkDisplayKHR display)
 {
    VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
    struct wsi_device *wsi_device = pdevice->wsi_device;
 
+   return wsi_acquire_drm_display(physicalDevice,
+                                  wsi_device,
+                                  drmFd,
+                                  display);
+}
+
+VkResult
+wsi_get_drm_display(VkPhysicalDevice      physicalDevice,
+                    struct wsi_device     *wsi_device,
+                    int                   drmFd,
+                    int                   connectorId,
+                    VkDisplayKHR          *pDisplay)
+{
    if (!wsi_device_matches_drm_fd(wsi_device, drmFd)) {
       *pDisplay = VK_NULL_HANDLE;
       return VK_ERROR_UNKNOWN;
@@ -3167,3 +3420,20 @@ wsi_GetDrmDisplayEXT(VkPhysicalDevice physicalDevice,
    *pDisplay = wsi_display_connector_to_handle(connector);
    return VK_SUCCESS;
 }
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetDrmDisplayEXT(VkPhysicalDevice physicalDevice,
+                     int32_t drmFd,
+                     uint32_t connectorId,
+                     VkDisplayKHR *pDisplay)
+{
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+   struct wsi_device *wsi_device = pdevice->wsi_device;
+
+   return wsi_get_drm_display(physicalDevice,
+                              wsi_device,
+                              drmFd,
+                              connectorId,
+                              pDisplay);
+}
+
