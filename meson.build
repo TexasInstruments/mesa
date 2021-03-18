@@ -298,6 +298,7 @@ with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
 with_nouveau_vk = _vulkan_drivers.contains('nouveau')
 with_asahi_vk = _vulkan_drivers.contains('asahi')
 with_gfxstream_vk = _vulkan_drivers.contains('gfxstream')
+with_pvr_vk = _vulkan_drivers.contains('pvr')
 with_any_vk = _vulkan_drivers.length() != 0
 
 with_llvm = with_llvm \
@@ -375,6 +376,21 @@ if with_aco_tests and not with_amd_vk
 endif
 if with_radv_tests and not with_amd_vk
   error('RADV tests require RADV')
+endif
+
+if with_pvr_vk
+  pvr_vulkan_display = get_option('pvr-vulkan-display')
+  if pvr_vulkan_display == ''
+    if with_gallium_pvr_alias
+      pvr_vulkan_display = gallium_pvr_alias
+    endif
+  elif pvr_vulkan_display == 'pvr'
+    pvr_vulkan_display = ''
+  endif
+  with_pvr_vulkan_display = pvr_vulkan_display != ''
+else
+  pvr_vulkan_display = ''
+  with_pvr_vulkan_display = false
 endif
 
 with_microsoft_clc = get_option('microsoft-clc').enabled()

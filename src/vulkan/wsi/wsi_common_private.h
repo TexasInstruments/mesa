@@ -242,7 +242,7 @@ bool
 wsi_device_matches_drm_fd(VkPhysicalDevice pdevice, int drm_fd);
 
 void
-wsi_wl_surface_destroy(VkIcdSurfaceBase *icd_surface, VkInstance _instance,
+wsi_wl_surface_destroy(VkIcdSurfaceBase *icd_surface,
                        const VkAllocationCallbacks *pAllocator);
 
 void
