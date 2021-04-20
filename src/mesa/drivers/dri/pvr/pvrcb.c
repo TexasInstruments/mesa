@@ -152,6 +152,21 @@ MODSUPGetCapability(__DRIscreen *psDRIScreen, unsigned int uCapability)
    return 0;
 }
 
+int
+MODSUPGetDisplayFD(__DRIscreen *psDRIScreen, void *pvLoaderPrivate)
+{
+#if __DRI_IMAGE_LOADER_VERSION >= 5
+   if (psDRIScreen->image.loader->base.version >= 5 &&
+       psDRIScreen->image.loader->getDisplayFD)
+      return psDRIScreen->image.loader->getDisplayFD(pvLoaderPrivate);
+#else
+   (void) psDRIScreen;
+   (void) pvLoaderPrivate;
+#endif
+
+   return -1;
+}
+
 bool
 PVRDRIConfigQuery(const PVRDRIConfig *psConfig,
                   PVRDRIConfigAttrib eConfigAttrib, int *piValueOut)

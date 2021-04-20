@@ -163,6 +163,9 @@ __DRIimage *MODSUPLookupEGLImage(struct __DRIscreenRec *psDRIScreen,
 unsigned int MODSUPGetCapability(struct __DRIscreenRec *psDRIScreen,
                                  unsigned int uCapability);
 
+int MODSUPGetDisplayFD(struct __DRIscreenRec *psDRIScreen,
+                       void *pvLoaderPrivate);
+
 bool PVRDRIConfigQuery(const PVRDRIConfig *psConfig,
                        PVRDRIConfigAttrib eConfigAttrib, int *piValueOut);
 

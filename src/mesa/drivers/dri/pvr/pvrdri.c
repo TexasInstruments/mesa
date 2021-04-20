@@ -176,12 +176,14 @@ PVRDRIInitScreen(__DRIscreen *psDRIScreen)
       .v0.GetCapability = MODSUPGetCapability,
       /* Version 1 callbacks */
       .v1.FlushFrontBuffer = MODSUPFlushFrontBuffer,
+      /* Version 2 callbacks */
+      .v2.GetDisplayFD = MODSUPGetDisplayFD,
    };
 
    if (!PVRLoaderIsSupported(psDRIScreen))
       return NULL;
 
-   if (!PVRDRICompatInit(&sDRICallbacks, 3, &sDRICallbacksV2, 1, 0))
+   if (!PVRDRICompatInit(&sDRICallbacks, 3, &sDRICallbacksV2, 2, 0))
       return NULL;
 
    psPVRScreen = calloc(1, sizeof(*psPVRScreen));
