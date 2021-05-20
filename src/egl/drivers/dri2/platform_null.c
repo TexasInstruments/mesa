@@ -45,6 +45,7 @@
 
 #include "egl_dri2.h"
 #include "loader.h"
+#include "util/os_file.h"
 
 #define NULL_CARD_MINOR_MAX 63U
 
@@ -1841,12 +1842,22 @@ dri2_null_flush_front_buffer(__DRIdrawable * driDrawable, void *loaderPrivate)
    (void) loaderPrivate;
 }
 
+static int
+dri2_null_get_display_fd(void *loaderPrivate)
+{
+   _EGLDisplay *disp = loaderPrivate;
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+
+   return dri2_dpy->fd_display_gpu;
+}
+
 static const __DRIimageLoaderExtension image_loader_extension = {
-   .base = { __DRI_IMAGE_LOADER, 2 },
+   .base = { __DRI_IMAGE_LOADER, 5 },
 
    .getBuffers          = dri2_null_image_get_buffers,
    .flushFrontBuffer    = dri2_null_flush_front_buffer,
    .getCapability       = dri2_null_get_capability,
+   .getDisplayFD        = dri2_null_get_display_fd,
 };
 
 static const __DRIextension *image_loader_extensions[] = {
@@ -1876,6 +1887,50 @@ dri2_null_device_is_kms(int fd)
 }
 
 static bool
+dri2_null_try_device(_EGLDisplay *disp)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+
+   if (!dri2_null_device_is_kms(dri2_dpy->fd_display_gpu))
+      return false;
+
+#if defined(NULL_DRI_DRIVER_NAME)
+   /* Skip devices not handled by NULL_DRI_DRIVER_NAME */
+   {
+      char *driver_name = loader_get_driver_for_fd(dri2_dpy->fd_display_gpu);
+      bool skip = !driver_name || !!strcmp(driver_name, NULL_DRI_DRIVER_NAME);
+
+      free(driver_name);
+
+      if (skip)
+         return false;
+   }
+#endif
+
+   dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
+   if (!dri2_dpy->driver_name)
+      return false;
+
+   if (dri2_load_driver_dri3(disp)) {
+      _EGLDevice *dev = _eglAddDevice(dri2_dpy->fd_render_gpu, false);
+      if (!dev) {
+         dlclose(dri2_dpy->driver);
+         _eglLog(_EGL_WARNING, "DRI2: failed to find EGLDevice");
+      } else {
+         dri2_dpy->loader_extensions = image_loader_extensions;
+         dri2_dpy->own_device = 1;
+         disp->Device = dev;
+         return true;
+      }
+   }
+
+   free(dri2_dpy->driver_name);
+   dri2_dpy->driver_name = NULL;
+
+   return false;
+}
+
+static bool
 dri2_null_probe_device(_EGLDisplay *disp)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
@@ -1897,25 +1952,8 @@ dri2_null_probe_device(_EGLDisplay *disp)
       loader_get_user_preferred_fd(&dri2_dpy->fd_render_gpu,
                                    &dri2_dpy->fd_display_gpu);
 
-      if (dri2_null_device_is_kms(dri2_dpy->fd_display_gpu)) {
-         dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
-         if (dri2_dpy->driver_name) {
-            if (dri2_load_driver_dri3(disp)) {
-               _EGLDevice *dev = _eglAddDevice(dri2_dpy->fd_render_gpu, false);
-               if (!dev) {
-                  dlclose(dri2_dpy->driver);
-                  _eglLog(_EGL_WARNING, "DRI2: failed to find EGLDevice");
-               } else {
-                  dri2_dpy->loader_extensions = image_loader_extensions;
-                  dri2_dpy->own_device = 1;
-                  disp->Device = dev;
-                  return true;
-               }
-            }
-            free(dri2_dpy->driver_name);
-            dri2_dpy->driver_name = NULL;
-         }
-      }
+      if (dri2_null_try_device(disp))
+         return true;
 
       close(dri2_dpy->fd_render_gpu);
       if (dri2_dpy->fd_display_gpu != dri2_dpy->fd_render_gpu)
