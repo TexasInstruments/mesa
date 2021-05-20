@@ -52,6 +52,7 @@
 #include "loader.h"
 #include "util/u_debug.h"
 #include "util/macros.h"
+#include "util/os_file.h"
 
 /* For importing wl_buffer */
 #if HAVE_WAYLAND_PLATFORM
@@ -164,6 +165,14 @@ image_get_buffers(__DRIdrawable *driDrawable,
                                  surf->dri_private, buffer_mask, buffers);
 }
 
+static int
+dri_get_display_fd(void *loaderPrivate)
+{
+   struct gbm_dri_device *dri = loaderPrivate;
+
+   return dri->base.v0.fd;
+}
+
 static void
 swrast_get_drawable_info(__DRIdrawable *driDrawable,
                          int           *x,
@@ -245,20 +254,22 @@ static const __DRIimageLookupExtension image_lookup_extension = {
 };
 
 static const __DRIdri2LoaderExtension dri2_loader_extension = {
-   .base = { __DRI_DRI2_LOADER, 4 },
+   .base = { __DRI_DRI2_LOADER, 6 },
 
    .getBuffers              = dri_get_buffers,
    .flushFrontBuffer        = dri_flush_front_buffer,
    .getBuffersWithFormat    = dri_get_buffers_with_format,
    .getCapability           = dri_get_capability,
+   .getDisplayFD            = dri_get_display_fd,
 };
 
 static const __DRIimageLoaderExtension image_loader_extension = {
-   .base = { __DRI_IMAGE_LOADER, 2 },
+   .base = { __DRI_IMAGE_LOADER, 5 },
 
    .getBuffers          = image_get_buffers,
    .flushFrontBuffer    = dri_flush_front_buffer,
    .getCapability       = dri_get_capability,
+   .getDisplayFD        = dri_get_display_fd,
 };
 
 static const __DRIswrastLoaderExtension swrast_loader_extension = {
@@ -358,7 +369,7 @@ dri_screen_create_for_driver(struct gbm_dri_device *dri, char *driver_name)
 
    dri->driver_extensions = extensions;
    dri->loader_extensions = gbm_dri_screen_extensions;
-   dri->screen = dri->mesa->createNewScreen(0, swrast ? -1 : dri->base.v0.fd,
+   dri->screen = dri->mesa->createNewScreen(0, swrast ? -1 : dri->fd_render_gpu,
                                             dri->loader_extensions,
                                             dri->driver_extensions,
                                             &dri->driver_configs, dri);
@@ -395,7 +406,7 @@ dri_screen_create(struct gbm_dri_device *dri)
 {
    char *driver_name;
 
-   driver_name = loader_get_driver_for_fd(dri->base.v0.fd);
+   driver_name = loader_get_driver_for_fd(dri->fd_render_gpu);
    if (!driver_name)
       return -1;
 
@@ -1380,6 +1391,9 @@ dri_destroy(struct gbm_device *gbm)
    dlclose(dri->driver);
    free(dri->driver_name);
 
+   if (dri->fd_render_gpu >= 0 && dri->fd_render_gpu != dri->base.v0.fd)
+      close(dri->fd_render_gpu);
+
    free(dri);
 }
 
@@ -1401,7 +1415,9 @@ dri_device_create(int fd, uint32_t gbm_backend_version)
    if (!dri)
       return NULL;
 
-   dri->base.v0.fd = fd;
+   dri->fd_render_gpu = fd;
+   loader_get_user_preferred_fd(&dri->fd_render_gpu, &dri->base.v0.fd);
+
    dri->base.v0.backend_version = gbm_backend_version;
    dri->base.v0.bo_create = gbm_dri_bo_create;
    dri->base.v0.bo_import = gbm_dri_bo_import;
@@ -1447,6 +1463,9 @@ dri_device_create(int fd, uint32_t gbm_backend_version)
    return &dri->base;
 
 err_dri:
+   if (dri->fd_render_gpu >= 0 && dri->fd_render_gpu != dri->base.v0.fd)
+      close(dri->fd_render_gpu);
+
    free(dri);
 
    return NULL;

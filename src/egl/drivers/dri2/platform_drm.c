@@ -582,7 +582,7 @@ dri2_drm_authenticate(_EGLDisplay *disp, uint32_t id)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
 
-   return drmAuthMagic(dri2_dpy->fd_render_gpu, id);
+   return drmAuthMagic(dri2_dpy->fd_display_gpu, id);
 }
 
 static void
@@ -783,6 +783,11 @@ dri2_initialize_drm(_EGLDisplay *disp)
    dri2_dpy->fd_display_gpu = dri2_dpy->fd_render_gpu;
    dri2_dpy->gbm_dri = gbm_dri_device(gbm);
 
+   if (gbm_dri_device_get_fd_render_gpu(dri2_dpy->gbm_dri) !=
+       gbm_device_get_fd(gbm))
+      dri2_dpy->fd_render_gpu =
+         os_dupfd_cloexec(gbm_dri_device_get_fd_render_gpu(dri2_dpy->gbm_dri));
+
    if (strcmp(gbm_device_get_backend_name(gbm), "drm") != 0) {
       err = "DRI2: gbm device using incorrect/incompatible backend";
       goto cleanup;
@@ -856,7 +861,7 @@ dri2_initialize_drm(_EGLDisplay *disp)
 
 #ifdef HAVE_WAYLAND_PLATFORM
    dri2_dpy->device_name =
-      loader_get_device_name_for_fd(dri2_dpy->fd_render_gpu);
+      loader_get_device_name_for_fd(dri2_dpy->fd_display_gpu);
 #endif
    dri2_set_WL_bind_wayland_display(disp);
 
