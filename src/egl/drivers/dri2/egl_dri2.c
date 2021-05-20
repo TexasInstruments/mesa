@@ -3575,6 +3575,15 @@ dri2_bind_wayland_display_wl(_EGLDisplay *disp, struct wl_display *wl_dpy)
        dri2_dpy->image->base.version >= 7 &&
        dri2_dpy->image->createImageFromFds != NULL)
       flags |= WAYLAND_DRM_PRIME;
+   else if (dri2_dpy->image->base.version >= 10 &&
+            dri2_dpy->image->getCapabilities != NULL) {
+         int capabilities;
+
+         capabilities = dri2_dpy->image->getCapabilities(dri2_dpy->dri_screen_render_gpu);
+         if ((capabilities & __DRI_IMAGE_CAP_PRIME_IMPORT) != 0 &&
+             (capabilities & __DRI_IMAGE_CAP_PRIME_EXPORT) != 0)
+            flags |= WAYLAND_DRM_PRIME;
+   }
 
    dri2_dpy->wl_server_drm =
       wayland_drm_init(wl_dpy, device_name, &wl_drm_callbacks, disp, flags);
