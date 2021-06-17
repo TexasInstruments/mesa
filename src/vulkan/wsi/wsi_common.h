@@ -51,6 +51,8 @@ extern const struct vk_device_entrypoint_table wsi_device_entrypoints;
 #define VK_STRUCTURE_TYPE_WSI_MEMORY_ALLOCATE_INFO_MESA (VkStructureType)1000001003
 #define VK_STRUCTURE_TYPE_WSI_SURFACE_SUPPORTED_COUNTERS_MESA (VkStructureType)1000001005
 #define VK_STRUCTURE_TYPE_WSI_MEMORY_SIGNAL_SUBMIT_INFO_MESA (VkStructureType)1000001006
+#define VK_STRUCTURE_TYPE_WSI_IMAGE_CREATE_INFO2_MESA (VkStructureType)1000001007
+#define VK_STRUCTURE_TYPE_WSI_MEMORY_ALLOCATE_INFO2_MESA (VkStructureType)1000001008
 
 #define VK_STRUCTURE_TYPE_WSI_IMAGE_CREATE_INFO_MESA_cast struct wsi_image_create_info
 #define VK_STRUCTURE_TYPE_WSI_MEMORY_ALLOCATE_INFO_MESA_cast struct wsi_memory_allocate_info
@@ -90,6 +92,18 @@ struct wsi_memory_signal_submit_info {
     VkStructureType sType;
     const void *pNext;
     VkDeviceMemory memory;
+};
+
+struct wsi_image_create_info2 {
+    VkStructureType sType;
+    const void *pNext;
+    int display_fd;
+};
+
+struct wsi_memory_allocate_info2 {
+    VkStructureType sType;
+    const void *pNext;
+    int display_fd;
 };
 
 struct wsi_interface;
