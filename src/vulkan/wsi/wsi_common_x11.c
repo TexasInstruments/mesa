@@ -110,7 +110,8 @@ struct wsi_x11_vk_surface {
  * Wrapper around xcb_dri3_open. Returns the opened fd or -1 on error.
  */
 static int
-wsi_dri3_open(xcb_connection_t *conn,
+wsi_dri3_open(const struct wsi_device *wsi_dev,
+              xcb_connection_t *conn,
               xcb_window_t root,
               uint32_t provider)
 {
@@ -152,19 +153,47 @@ wsi_x11_check_dri3_compatible(const struct wsi_device *wsi_dev,
    xcb_screen_iterator_t screen_iter =
       xcb_setup_roots_iterator(xcb_get_setup(conn));
    xcb_screen_t *screen = screen_iter.data;
+   bool match;
 
    /* Open the DRI3 device from the X server. If we do not retrieve one we
     * assume our local device is compatible.
     */
-   int dri3_fd = wsi_dri3_open(conn, screen->root, None);
+   int dri3_fd = wsi_dri3_open(wsi_dev, conn, screen->root, None);
    if (dri3_fd == -1)
       return true;
 
-   bool match = wsi_dev->can_present_on_device(wsi_dev->pdevice, dri3_fd);
+   int alloc_fd = wsi_dev->get_allocation_device(wsi_dev->pdevice, dri3_fd);
+   if (alloc_fd != -1) {
+      close(alloc_fd);
+      match = true;
+   } else {
+      match = wsi_dev->can_present_on_device(wsi_dev->pdevice, dri3_fd);
+   }
 
    close(dri3_fd);
 
    return match;
+}
+
+/**
+ * Get an fd suitable for shared memory allocation (e.g. an fd for the display
+ * driver). Returns the opened fd or -1 on error.
+ */
+static int
+wsi_dri3_get_alloc_fd(const struct wsi_device *wsi_dev,
+                      xcb_connection_t *conn,
+                      xcb_window_t root,
+                      uint32_t provider)
+{
+   int fd = wsi_dri3_open(wsi_dev, conn, root, provider);
+   int alloc_fd = wsi_dev->get_allocation_device(wsi_dev->pdevice, fd);
+
+   if (alloc_fd != -1) {
+      close(fd);
+      return alloc_fd;
+   } else {
+      return fd;
+   }
 }
 #endif
 
@@ -2106,12 +2135,13 @@ static VkResult
 x11_image_init(VkDevice device_h, struct x11_swapchain *chain,
                const VkSwapchainCreateInfoKHR *pCreateInfo,
                const VkAllocationCallbacks* pAllocator,
+               int display_fd,
                struct x11_image *image)
 {
    VkResult result;
 
    result = wsi_create_image(&chain->base, &chain->base.image_info,
-                             &image->base);
+                             display_fd, &image->base);
    if (result != VK_SUCCESS)
       return result;
 
@@ -2719,8 +2749,23 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
 #endif
    }
 
+   int display_fd;
+   if (wsi_device->sw) {
+      display_fd = -1;
+   } else {
+#ifdef HAVE_X11_DRM
+      xcb_screen_iterator_t screen_iter =
+         xcb_setup_roots_iterator(xcb_get_setup(conn));
+      xcb_screen_t *screen = screen_iter.data;
+
+      display_fd = wsi_dri3_get_alloc_fd(wsi_device, conn, screen->root, None);
+#else
+      display_fd = -1;
+#endif
+   }
+
    result = wsi_swapchain_init(wsi_device, &chain->base, device, pCreateInfo,
-                               image_params, pAllocator);
+                               image_params, pAllocator, display_fd);
 
    for (int i = 0; i < ARRAY_SIZE(modifiers); i++)
       vk_free(pAllocator, modifiers[i]);
@@ -2817,9 +2862,14 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    uint32_t image = 0;
    for (; image < chain->base.image_count; image++) {
       result = x11_image_init(device, chain, pCreateInfo, pAllocator,
-                              &chain->images[image]);
+                              display_fd, &chain->images[image]);
       if (result != VK_SUCCESS)
          goto fail_init_images;
+   }
+
+   if (display_fd >= 0) {
+      close(display_fd);
+      display_fd = -1;
    }
 
    /* The queues have a length of base.image_count + 1 because we will
@@ -2885,6 +2935,9 @@ fail_register:
 
 fail_alloc:
    vk_free(pAllocator, chain);
+
+   if (display_fd >= 0)
+     close(display_fd);
 
    return result;
 }

@@ -63,6 +63,10 @@ static bool present_false(VkPhysicalDevice pdevice, int fd) {
    return false;
 }
 
+static int get_allocation_device_fail(VkPhysicalDevice pdevice, int fd) {
+   return -1;
+}
+
 VkResult
 wsi_device_init(struct wsi_device *wsi,
                 VkPhysicalDevice pdevice,
@@ -298,6 +302,8 @@ wsi_device_init(struct wsi_device *wsi,
    wsi->can_present_on_device = present_false;
 #endif
 
+   wsi->get_allocation_device = get_allocation_device_fail;
+
    return VK_SUCCESS;
 fail:
    wsi_device_finish(wsi, alloc);
@@ -400,6 +406,7 @@ static VkResult
 configure_image(const struct wsi_swapchain *chain,
                 const VkSwapchainCreateInfoKHR *pCreateInfo,
                 const struct wsi_base_image_params *params,
+                UNUSED int display_fd,
                 struct wsi_image_info *info)
 {
    info->image_type = params->image_type;
@@ -413,7 +420,8 @@ configure_image(const struct wsi_swapchain *chain,
    case WSI_IMAGE_TYPE_DRM: {
       const struct wsi_drm_image_params *drm_params =
          container_of(params, const struct wsi_drm_image_params, base);
-      return wsi_drm_configure_image(chain, pCreateInfo, drm_params, info);
+      return wsi_drm_configure_image(chain, pCreateInfo, drm_params,
+                                     display_fd, info);
    }
 #endif
 #ifdef _WIN32
@@ -434,7 +442,8 @@ wsi_swapchain_init(const struct wsi_device *wsi,
                    VkDevice _device,
                    const VkSwapchainCreateInfoKHR *pCreateInfo,
                    const struct wsi_base_image_params *image_params,
-                   const VkAllocationCallbacks *pAllocator)
+                   const VkAllocationCallbacks *pAllocator,
+                   int display_fd)
 {
    VK_FROM_HANDLE(vk_device, device, _device);
    VkResult result;
@@ -491,7 +500,7 @@ wsi_swapchain_init(const struct wsi_device *wsi,
    }
 
    result = configure_image(chain, pCreateInfo, image_params,
-                            &chain->image_info);
+                            display_fd, &chain->image_info);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -594,6 +603,7 @@ VkResult
 wsi_configure_image(const struct wsi_swapchain *chain,
                     const VkSwapchainCreateInfoKHR *pCreateInfo,
                     VkExternalMemoryHandleTypeFlags handle_types,
+                    int display_fd,
                     struct wsi_image_info *info)
 {
    memset(info, 0, sizeof(*info));
@@ -655,6 +665,12 @@ wsi_configure_image(const struct wsi_swapchain *chain,
       .sType = VK_STRUCTURE_TYPE_WSI_IMAGE_CREATE_INFO_MESA,
    };
    __vk_append_struct(&info->create, &info->wsi);
+
+   info->wsi2 = (struct wsi_image_create_info2) {
+      .sType = VK_STRUCTURE_TYPE_WSI_IMAGE_CREATE_INFO2_MESA,
+      .display_fd = display_fd,
+   };
+   __vk_append_struct(&info->create, &info->wsi2);
 
    if (pCreateInfo->flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR) {
       info->create.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
@@ -721,6 +737,7 @@ wsi_destroy_image_info(const struct wsi_swapchain *chain,
 VkResult
 wsi_create_image(const struct wsi_swapchain *chain,
                  const struct wsi_image_info *info,
+                 int display_fd,
                  struct wsi_image *image)
 {
    const struct wsi_device *wsi = chain->wsi;
@@ -739,7 +756,7 @@ wsi_create_image(const struct wsi_swapchain *chain,
    if (result != VK_SUCCESS)
       goto fail;
 
-   result = info->create_mem(chain, info, image);
+   result = info->create_mem(chain, info, display_fd, image);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -2203,6 +2220,7 @@ wsi_configure_image_blit_image(UNUSED const struct wsi_swapchain *chain,
 static VkResult
 wsi_create_cpu_linear_image_mem(const struct wsi_swapchain *chain,
                                 const struct wsi_image_info *info,
+                                int display_fd,
                                 struct wsi_image *image)
 {
    const struct wsi_device *wsi = chain->wsi;
@@ -2268,6 +2286,7 @@ wsi_create_cpu_linear_image_mem(const struct wsi_swapchain *chain,
 static VkResult
 wsi_create_cpu_buffer_image_mem(const struct wsi_swapchain *chain,
                                 const struct wsi_image_info *info,
+                                int display_fd,
                                 struct wsi_image *image)
 {
    VkResult result;
@@ -2312,7 +2331,7 @@ wsi_configure_cpu_image(const struct wsi_swapchain *chain,
       handle_types = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
 
    VkResult result = wsi_configure_image(chain, pCreateInfo,
-                                         handle_types, info);
+                                         handle_types, -1, info);
    if (result != VK_SUCCESS)
       return result;
 

@@ -1,6 +1,8 @@
 # Copyright © 2017 Intel Corporation
 # SPDX-License-Identifier: MIT
 
+c_args_vulkan_wsi = []
+
 files_vulkan_wsi = files('wsi_common.c')
 links_vulkan_wsi = []
 platform_deps = []
@@ -16,6 +18,10 @@ endif
 
 if with_platform_wayland
   files_vulkan_wsi += files('wsi_common_wayland.c')
+  if with_wayland_bind_display
+    files_vulkan_wsi += [wayland_drm_client_protocol_h, wayland_drm_protocol_c]
+    c_args_vulkan_wsi += '-DHAVE_BIND_WL_DISPLAY'
+  endif
   files_vulkan_wsi += wp_files['fifo-v1']
   files_vulkan_wsi += wp_files['commit-timing-v1']
   files_vulkan_wsi += wp_files['linux-dmabuf-unstable-v1']
@@ -57,6 +63,7 @@ libvulkan_wsi = static_library(
   'vulkan_wsi',
   [files_vulkan_wsi, wsi_entrypoints],
   include_directories : [inc_include, inc_src],
+  c_args: c_args_vulkan_wsi,
   dependencies : [
     vulkan_wsi_deps, dep_libdrm, dep_libudev, idep_vulkan_util_headers,
     idep_vulkan_runtime_headers, idep_xmlconfig, idep_mesautil, platform_deps,

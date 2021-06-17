@@ -32,6 +32,8 @@
 #include <poll.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <fcntl.h>
+#include <xf86drm.h>
 
 #include "drm-uapi/drm_fourcc.h"
 
@@ -43,6 +45,9 @@
 #include "wsi_common_private.h"
 #include "fifo-v1-client-protocol.h"
 #include "commit-timing-v1-client-protocol.h"
+#ifdef HAVE_BIND_WL_DISPLAY
+#include "wayland-drm-client-protocol.h"
+#endif
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
 #include "presentation-time-client-protocol.h"
 #include "linux-drm-syncobj-v1-client-protocol.h"
@@ -106,6 +111,9 @@ struct wsi_wl_display {
    struct wl_event_queue *queue;
 
    struct wl_shm *wl_shm;
+#ifdef HAVE_BIND_WL_DISPLAY
+   struct wl_drm *wl_drm;
+#endif
    struct zwp_linux_dmabuf_v1 *wl_dmabuf;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct wp_tearing_control_manager_v1 *tearing_control_manager;
@@ -130,6 +138,10 @@ struct wsi_wl_display {
 
    /* Formats populated by zwp_linux_dmabuf_v1 or wl_shm interfaces */
    struct u_vector formats;
+   int fd;
+#ifdef HAVE_BIND_WL_DISPLAY
+   bool authenticated;
+#endif
 
    /* Additional colorspaces returned by wp_color_management_v1. */
    struct u_vector colorspaces;
@@ -702,6 +714,104 @@ wl_shm_format_for_vk_format(VkFormat vk_format, bool alpha)
    }
 }
 
+static char *
+get_render_node(dev_t device)
+{
+   char *render_node = NULL;
+   drmDevicePtr dev_ptr;
+
+   if (drmGetDeviceFromDevId(device, 0, &dev_ptr) < 0)
+      return NULL;
+
+   if (dev_ptr->available_nodes & (1 << DRM_NODE_RENDER)) {
+      render_node = strdup(dev_ptr->nodes[DRM_NODE_RENDER]);
+      if (!render_node)
+         mesa_logd("MESA: failed to allocate memory for render node\n");
+   }
+
+   drmFreeDevice(&dev_ptr);
+
+   return render_node;
+}
+
+static int
+open_device(const char *name)
+{
+   int fd;
+
+#ifdef O_CLOEXEC
+   fd = open(name, O_RDWR | O_CLOEXEC);
+   if (fd != -1 || errno != EINVAL) {
+      return fd;
+   }
+#endif
+
+   fd = open(name, O_RDWR);
+   if (fd != -1) {
+      long flags = fcntl(fd, F_GETFD);
+
+      if (flags != -1) {
+         if (!fcntl(fd, F_SETFD, flags | FD_CLOEXEC))
+             return fd;
+      }
+      close (fd);
+   }
+
+   return -1;
+}
+
+#ifdef HAVE_BIND_WL_DISPLAY
+static void
+drm_handle_device(void *data, struct wl_drm *drm, const char *name)
+{
+   struct wsi_wl_display *display = data;
+
+   if (display->fd == -1) {
+      const int fd = open_device(name);
+
+      if (fd != -1) {
+         if (drmGetNodeTypeFromFd(fd) != DRM_NODE_RENDER) {
+            drm_magic_t magic;
+
+            if (drmGetMagic(fd, &magic)) {
+               close(fd);
+               return;
+            }
+            wl_drm_authenticate(drm, magic);
+         } else {
+            display->authenticated = true;
+         }
+         display->fd = fd;
+      }
+   }
+}
+
+static void
+drm_handle_format(void *data, struct wl_drm *drm, uint32_t wl_format)
+{
+}
+
+static void
+drm_handle_authenticated(void *data, struct wl_drm *drm)
+{
+   struct wsi_wl_display *display = data;
+
+   display->authenticated = true;
+}
+
+static void
+drm_handle_capabilities(void *data, struct wl_drm *drm, uint32_t capabilities)
+{
+}
+
+static const struct wl_drm_listener drm_listener = {
+   drm_handle_device,
+   drm_handle_format,
+   drm_handle_authenticated,
+   drm_handle_capabilities,
+};
+#endif
+
 static void
 dmabuf_handle_format(void *data, struct zwp_linux_dmabuf_v1 *dmabuf,
                      uint32_t format)
@@ -819,6 +929,18 @@ default_dmabuf_feedback_main_device(void *data,
 
    assert(device->size == sizeof(dev_t));
    memcpy(&display->main_device, device->data, device->size);
+
+   if (display->fd == -1) {
+      char *node = get_render_node(display->main_device);
+
+      if (node) {
+         display->fd = open_device(node);
+         free(node);
+#ifdef HAVE_BIND_WL_DISPLAY
+         display->authenticated = true;
+#endif
+      }
+   }
 }
 
 static void
@@ -1399,6 +1521,16 @@ registry_handle_global(void *data, struct wl_registry *registry,
          wl_shm_add_listener(display->wl_shm, &shm_listener, display);
       }
    } else {
+#ifdef HAVE_BIND_WL_DISPLAY
+      if (strcmp(interface, "wl_drm") == 0) {
+         assert(display->wl_drm == NULL);
+         assert(version >= 2);
+
+         display->wl_drm =
+            wl_registry_bind(registry, name, &wl_drm_interface, 2);
+         wl_drm_add_listener(display->wl_drm, &drm_listener, display);
+      }
+#endif
       if (strcmp(interface, zwp_linux_dmabuf_v1_interface.name) == 0 && version >= 3) {
          display->wl_dmabuf =
             wl_registry_bind(registry, name, &zwp_linux_dmabuf_v1_interface,
@@ -1470,6 +1602,10 @@ wsi_wl_display_finish(struct wsi_wl_display *display)
       wl_shm_destroy(display->wl_shm);
    if (display->wl_syncobj)
       wp_linux_drm_syncobj_manager_v1_destroy(display->wl_syncobj);
+#ifdef HAVE_BIND_WL_DISPLAY
+   if (display->wl_drm)
+      wl_drm_destroy(display->wl_drm);
+#endif
    if (display->wl_dmabuf)
       zwp_linux_dmabuf_v1_destroy(display->wl_dmabuf);
    if (display->wp_presentation_notwrapped)
@@ -1486,6 +1622,9 @@ wsi_wl_display_finish(struct wsi_wl_display *display)
       wl_proxy_wrapper_destroy(display->wl_display_wrapper);
    if (display->queue)
       wl_event_queue_destroy(display->queue);
+
+   if (display->fd != -1)
+      close(display->fd);
 }
 
 static VkResult
@@ -1505,6 +1644,7 @@ wsi_wl_display_init(struct wsi_wayland *wsi_wl,
    display->wsi_wl = wsi_wl;
    display->wl_display = wl_display;
    display->sw = sw;
+   display->fd = -1;
 
    display->queue = wl_display_create_queue_with_name(wl_display, queue_name);
    if (!display->queue) {
@@ -1532,16 +1672,12 @@ wsi_wl_display_init(struct wsi_wayland *wsi_wl,
 
    wl_registry_add_listener(registry, &registry_listener, display);
 
-   /* Round-trip to get wl_shm and zwp_linux_dmabuf_v1 globals */
+   /* Round-trip to get wl_shm, wl_drm and zwp_linux_dmabuf_v1 globals */
    wl_display_roundtrip_queue(display->wl_display, display->queue);
    if (!display->wl_dmabuf && !display->wl_shm) {
       result = VK_ERROR_SURFACE_LOST_KHR;
       goto fail_registry;
    }
-
-   /* Caller doesn't expect us to query formats/modifiers, so return */
-   if (!get_format_list)
-      goto out;
 
    /* Default assumption */
    display->same_gpu = true;
@@ -1554,27 +1690,61 @@ wsi_wl_display_init(struct wsi_wayland *wsi_wl,
             zwp_linux_dmabuf_v1_get_default_feedback(display->wl_dmabuf);
          zwp_linux_dmabuf_feedback_v1_add_listener(display->wl_dmabuf_feedback,
                                                    &dmabuf_feedback_listener, display);
-
          /* Round-trip again to fetch dma-buf feedback */
          wl_display_roundtrip_queue(display->wl_display, display->queue);
 
-         if (wsi_wl->wsi->drm_info.hasRender ||
-             wsi_wl->wsi->drm_info.hasPrimary) {
-            /* Apparently some wayland compositor do not send the render
-             * device node but the primary, so test against both.
-             */
-            display->same_gpu =
-               (wsi_wl->wsi->drm_info.hasRender &&
-                major(display->main_device) == wsi_wl->wsi->drm_info.renderMajor &&
-                minor(display->main_device) == wsi_wl->wsi->drm_info.renderMinor) ||
-               (wsi_wl->wsi->drm_info.hasPrimary &&
-                major(display->main_device) == wsi_wl->wsi->drm_info.primaryMajor &&
-                minor(display->main_device) == wsi_wl->wsi->drm_info.primaryMinor);
+         int device_fd = wsi_wl->wsi->get_allocation_device(wsi_wl->wsi->pdevice,
+                                                           display->fd);
+         /* Device compatibility is assumed (i.e. same GPU) if there is a
+          * valid device FD.
+          */
+         if (device_fd != -1) {
+            close(display->fd);
+            display->fd = device_fd;
+         } else {
+            display->same_gpu = wsi_wl->wsi->can_present_on_device(wsi_wl->wsi->pdevice,
+                                                                   display->fd);
+            if (!display->same_gpu && (wsi_wl->wsi->drm_info.hasRender ||
+                                       wsi_wl->wsi->drm_info.hasPrimary)) {
+               /* Apparently some wayland compositor do not send the render
+                * device node but the primary, so test against both.
+                */
+               display->same_gpu =
+                  (wsi_wl->wsi->drm_info.hasRender &&
+                   major(display->main_device) == wsi_wl->wsi->drm_info.renderMajor &&
+                   minor(display->main_device) == wsi_wl->wsi->drm_info.renderMinor) ||
+                  (wsi_wl->wsi->drm_info.hasPrimary &&
+                   major(display->main_device) == wsi_wl->wsi->drm_info.primaryMajor &&
+                   minor(display->main_device) == wsi_wl->wsi->drm_info.primaryMinor);
+            }
          }
    }
 
-   /* Round-trip again to get formats, modifiers and color properties */
-   wl_display_roundtrip_queue(display->wl_display, display->queue);
+   /* Round-trip to get display FD, formats and modifiers */
+   if (
+#ifdef HAVE_BIND_WL_DISPLAY
+         display->wl_drm ||
+#endif
+         get_format_list)
+      wl_display_roundtrip_queue(display->wl_display, display->queue);
+#ifdef HAVE_BIND_WL_DISPLAY
+   if (display->wl_drm && display->fd == -1) {
+      result = VK_ERROR_SURFACE_LOST_KHR;
+      goto fail_registry;
+   }
+
+   if (display->wl_drm) {
+      wl_display_roundtrip_queue(display->wl_display, display->queue);
+
+      if (!display->authenticated) {
+         result = VK_ERROR_SURFACE_LOST_KHR;
+         goto fail_registry;
+      }
+   }
+#endif
+   /* Caller doesn't expect us to query formats/modifiers, so return */
+   if (!get_format_list)
+      goto out;
 
    if (wsi_wl_display_determine_colorspaces(display) < 0) {
       result = VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -3234,7 +3404,7 @@ wsi_wl_image_init(struct wsi_wl_swapchain *chain,
    VkResult result;
 
    result = wsi_create_image(&chain->base, &chain->base.image_info,
-                             &image->base);
+                             display->fd, &image->base);
    if (result != VK_SUCCESS)
       return result;
 
@@ -3581,7 +3751,8 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    }
 
    result = wsi_swapchain_init(wsi_device, &chain->base, device,
-                               pCreateInfo, image_params, pAllocator);
+                               pCreateInfo, image_params, pAllocator,
+                               chain->wsi_wl_surface->display->fd);
    if (result != VK_SUCCESS)
       goto fail;
 

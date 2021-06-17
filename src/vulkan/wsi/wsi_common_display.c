@@ -1161,7 +1161,7 @@ wsi_display_image_init(struct wsi_swapchain *drv_chain,
       return VK_ERROR_DEVICE_LOST;
 
    VkResult result = wsi_create_image(&chain->base, &chain->base.image_info,
-                                      &image->base);
+                                      wsi->fd, &image->base);
    if (result != VK_SUCCESS)
       return result;
 
@@ -2155,7 +2155,7 @@ wsi_display_surface_create_swapchain(
 
    VkResult result = wsi_swapchain_init(wsi_device, &chain->base, device,
                                         create_info, &image_params.base,
-                                        allocator);
+                                        allocator, wsi->fd);
    if (result != VK_SUCCESS) {
       u_cnd_monotonic_destroy(&chain->present_id_cond);
       mtx_destroy(&chain->present_id_mutex);
