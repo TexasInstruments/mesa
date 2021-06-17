@@ -520,7 +520,7 @@ wsi_win32_image_init(VkDevice device_h,
                      struct wsi_win32_image *image)
 {
    VkResult result = wsi_create_image(&chain->base, &chain->base.image_info,
-                                      &image->base);
+                                      -1, &image->base);
    if (result != VK_SUCCESS)
       return result;
 
@@ -839,7 +839,7 @@ wsi_win32_surface_create_swapchain(
 
    VkResult result = wsi_swapchain_init(wsi_device, &chain->base, device,
                                         create_info, image_params,
-                                        allocator);
+                                        allocator, -1);
    if (result != VK_SUCCESS) {
       vk_free(allocator, chain);
       return result;

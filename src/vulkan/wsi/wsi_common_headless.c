@@ -363,6 +363,7 @@ get_modifier_props(const struct wsi_image_info *info, uint64_t modifier)
 static VkResult
 wsi_create_null_image_mem(const struct wsi_swapchain *chain,
                           const struct wsi_image_info *info,
+                          int display_fd,
                           struct wsi_image *image)
 {
    const struct wsi_device *wsi = chain->wsi;
@@ -467,7 +468,7 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    };
 
    result = wsi_swapchain_init(wsi_device, &chain->base, device,
-                               pCreateInfo, &drm_params.base, pAllocator);
+                               pCreateInfo, &drm_params.base, pAllocator, -1);
    if (result != VK_SUCCESS) {
       vk_free(pAllocator, chain);
       return result;
@@ -483,7 +484,7 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    chain->vk_format = pCreateInfo->imageFormat;
 
    result = wsi_configure_image(&chain->base, pCreateInfo,
-                                0, &chain->base.image_info);
+                                0, -1, &chain->base.image_info);
    if (result != VK_SUCCESS) {
       goto fail;
    }
@@ -491,7 +492,7 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
 
 
    for (uint32_t i = 0; i < chain->base.image_count; i++) {
-      result = wsi_create_image(&chain->base, &chain->base.image_info,
+      result = wsi_create_image(&chain->base, &chain->base.image_info, -1,
                                 &chain->images[i].base);
       if (result != VK_SUCCESS)
          return result;
