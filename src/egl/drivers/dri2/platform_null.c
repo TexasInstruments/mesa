@@ -1790,9 +1790,25 @@ cleanup:
 static bool
 dri2_null_probe_devices(_EGLDisplay *disp)
 {
-   for (unsigned i = 0; i <= NULL_CARD_MINOR_MAX; i++) {
-      if (dri2_null_probe_device(disp, i))
-         return true;
+   const char *null_drm_display = getenv("NULL_DRM_DISPLAY");
+
+   if (null_drm_display) {
+      char *endptr;
+      long val = strtol(null_drm_display, &endptr, 10);
+
+      if (endptr != null_drm_display && !*endptr &&
+          val >= 0 && val <= NULL_CARD_MINOR_MAX) {
+         if (dri2_null_probe_device(disp, (unsigned)val))
+            return true;
+      } else {
+         _eglLog(_EGL_FATAL, "NULL_DRM_DISPLAY is invalid: %s",
+                 null_drm_display);
+      }
+   } else {
+      for (unsigned i = 0; i <= NULL_CARD_MINOR_MAX; i++) {
+         if (dri2_null_probe_device(disp, i))
+            return true;
+      }
    }
 
    return false;
