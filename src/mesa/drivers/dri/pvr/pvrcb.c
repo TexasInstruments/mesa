@@ -295,3 +295,27 @@ MODSUPFlushFrontBuffer(struct __DRIdrawableRec *psDRIDrawable,
       psDRIScreen->image.loader->flushFrontBuffer(psDRIDrawable,
                                                   pvLoaderPrivate);
 }
+
+void *
+MODSUPDrawableGetReferenceHandle(struct __DRIdrawableRec *psDRIDrawable)
+{
+   PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
+
+   return psPVRDrawable;
+}
+
+void
+MODSUPDrawableAddReference(void *pvReferenceHandle)
+{
+   PVRDRIDrawable *psPVRDrawable = pvReferenceHandle;
+
+   PVRDRIDrawableAddReference(psPVRDrawable);
+}
+
+void
+MODSUPDrawableRemoveReference(void *pvReferenceHandle)
+{
+   PVRDRIDrawable *psPVRDrawable = pvReferenceHandle;
+
+   PVRDRIDrawableRemoveReference(psPVRDrawable);
+}

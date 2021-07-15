@@ -1271,6 +1271,17 @@ struct PVRDRICallbacksV2
 			(struct __DRIscreenRec *psDRIScreen,
 			 void *pvLoaderPrivate);
 	} v2;
+	/* The v3 interface is an extension of v2, so v2 is required as well */
+	struct {
+		void *(*DrawableGetReferenceHandle)
+			(struct __DRIdrawableRec *psDRIDrawable);
+
+		void (*DrawableAddReference)
+			(void *pvReferenceHandle);
+
+		void (*DrawableRemoveReference)
+			(void *pvReferenceHandle);
+	} v3;
 };
 
 #endif /* defined(__PVRDRIIFCE_H__) */

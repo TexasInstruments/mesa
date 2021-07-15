@@ -99,6 +99,35 @@ PVRDRIScreenRemoveReference(PVRDRIScreen *psPVRScreen)
    free(psPVRScreen);
 }
 
+void
+PVRDRIDrawableAddReference(PVRDRIDrawable *psPVRDrawable)
+{
+   int iRefCount = p_atomic_inc_return(&psPVRDrawable->iRefCount);
+
+   (void) iRefCount;
+   assert(iRefCount > 1);
+}
+
+void
+PVRDRIDrawableRemoveReference(PVRDRIDrawable *psPVRDrawable)
+{
+   int iRefCount = p_atomic_dec_return(&psPVRDrawable->iRefCount);
+
+   assert(iRefCount >= 0);
+
+   if (iRefCount != 0)
+      return;
+
+   DRISUPDestroyDrawable(psPVRDrawable->psDRISUPDrawable);
+
+#if defined(DEBUG)
+   p_atomic_dec(&psPVRDrawable->psPVRScreen->iDrawableAlloc);
+#endif
+
+   PVRDRIScreenRemoveReference(psPVRDrawable->psPVRScreen);
+   free(psPVRDrawable);
+}
+
 static void
 PVRScreenPrintExtensions(__DRIscreen *psDRIScreen)
 {
@@ -178,12 +207,16 @@ PVRDRIInitScreen(__DRIscreen *psDRIScreen)
       .v1.FlushFrontBuffer = MODSUPFlushFrontBuffer,
       /* Version 2 callbacks */
       .v2.GetDisplayFD = MODSUPGetDisplayFD,
+      /* Version 3 callbacks */
+      .v3.DrawableGetReferenceHandle = MODSUPDrawableGetReferenceHandle,
+      .v3.DrawableAddReference = MODSUPDrawableAddReference,
+      .v3.DrawableRemoveReference = MODSUPDrawableRemoveReference,
    };
 
    if (!PVRLoaderIsSupported(psDRIScreen))
       return NULL;
 
-   if (!PVRDRICompatInit(&sDRICallbacks, 3, &sDRICallbacksV2, 2, 0))
+   if (!PVRDRICompatInit(&sDRICallbacks, 3, &sDRICallbacksV2, 3, 0))
       return NULL;
 
    psPVRScreen = calloc(1, sizeof(*psPVRScreen));
@@ -420,6 +453,7 @@ PVRDRICreateBuffer(__DRIscreen *psDRIScreen, __DRIdrawable *psDRIDrawable,
    }
 
    psDRIDrawable->driverPrivate = (void *) psPVRDrawable;
+   psPVRDrawable->iRefCount = 1;
    psPVRDrawable->psDRIDrawable = psDRIDrawable;
    psPVRDrawable->psPVRScreen = psPVRScreen;
    psPVRDrawable->sConfig.sGLMode = *psGLMode;
@@ -456,14 +490,7 @@ PVRDRIDestroyBuffer(__DRIdrawable *psDRIDrawable)
 {
    PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
 
-   DRISUPDestroyDrawable(psPVRDrawable->psDRISUPDrawable);
-
-#if defined(DEBUG)
-   p_atomic_dec(&psPVRDrawable->psPVRScreen->iDrawableAlloc);
-#endif
-
-   PVRDRIScreenRemoveReference(psPVRDrawable->psPVRScreen);
-   free(psPVRDrawable);
+   PVRDRIDrawableRemoveReference(psPVRDrawable);
 }
 
 static GLboolean

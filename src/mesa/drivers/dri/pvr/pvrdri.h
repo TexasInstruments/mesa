@@ -89,11 +89,18 @@ typedef struct PVRDRIContext_TAG {
 typedef struct PVRDRIDrawable_TAG {
    PVRDRIScreen *psPVRScreen;
    __DRIdrawable *psDRIDrawable;
+   int iRefCount;
    PVRDRIConfig sConfig;
    struct DRISUPDrawable *psDRISUPDrawable;
    unsigned int uFourCC;
    unsigned int uDRIFormat;
 } PVRDRIDrawable;
+
+/*************************************************************************//*!
+ pvrdri.c
+ *//**************************************************************************/
+void PVRDRIDrawableAddReference(PVRDRIDrawable *psPVRDrawable);
+void PVRDRIDrawableRemoveReference(PVRDRIDrawable *psPVRDrawable);
 
 /*************************************************************************//*!
  pvrutil.c
@@ -175,5 +182,11 @@ bool MODSUPConfigQuery(const PVRDRIConfig *psConfig,
 
 void MODSUPFlushFrontBuffer(struct __DRIdrawableRec *psDRIDrawable,
                             void *pvLoaderPrivate);
+
+void *MODSUPDrawableGetReferenceHandle(struct __DRIdrawableRec *psDRIDrawable);
+
+void MODSUPDrawableAddReference(void *pvReferenceHandle);
+
+void MODSUPDrawableRemoveReference(void *pvReferenceHandle);
 
 #endif /* defined(__PVRDRI_H__) */
