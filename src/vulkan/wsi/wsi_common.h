@@ -89,7 +89,9 @@ struct wsi_device {
    VkPhysicalDeviceMemoryProperties memory_props;
    uint32_t queue_family_count;
 
+#if defined(VULKAN_WSI_USE_PCI_BUS_INFO)
    VkPhysicalDevicePCIBusInfoPropertiesEXT pci_bus_info;
+#endif
 
    bool supports_modifiers;
    uint32_t maxImageDimension2D;

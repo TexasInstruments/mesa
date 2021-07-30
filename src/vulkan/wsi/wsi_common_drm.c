@@ -42,6 +42,7 @@ wsi_device_matches_drm_fd(const struct wsi_device *wsi, int drm_fd)
    if (ret)
       return false;
 
+#if defined(VULKAN_WSI_USE_PCI_BUS_INFO)
    bool match = false;
    switch (fd_device->bustype) {
    case DRM_BUS_PCI:
@@ -54,6 +55,9 @@ wsi_device_matches_drm_fd(const struct wsi_device *wsi, int drm_fd)
    default:
       break;
    }
+#else
+   const bool match = true;
+#endif
 
    drmFreeDevice(&fd_device);
 
