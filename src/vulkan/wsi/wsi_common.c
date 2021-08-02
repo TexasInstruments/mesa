@@ -302,6 +302,10 @@ wsi_device_init2(struct wsi_device *wsi,
             driQueryOptionb(dri_options, "vk_wsi_force_swapchain_to_current_extent");
       }
    }
+#if !defined(VULKAN_WSI_BGRA8_SNORM_FIRST)
+   else
+      wsi->force_bgra8_unorm_first = true;
+#endif
 
    /* can_present_on_device is a function pointer used to determine if images
     * can be presented directly on a given device file descriptor (fd).
