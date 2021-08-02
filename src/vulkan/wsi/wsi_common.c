@@ -262,6 +262,10 @@ wsi_device_init2(struct wsi_device *wsi,
             driQueryOptionb(dri_options, "vk_wsi_force_swapchain_to_current_extent");
       }
    }
+#if !defined(VULKAN_WSI_BGRA8_SNORM_FIRST)
+   else
+      wsi->force_bgra8_unorm_first = true;
+#endif
 
    return VK_SUCCESS;
 fail:
