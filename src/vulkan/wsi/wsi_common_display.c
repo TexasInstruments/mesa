@@ -1183,6 +1183,13 @@ static const struct wsi_display_surface_format
       },
       .drm_format = DRM_FORMAT_XRGB8888
    },
+   {
+      .surface_format = {
+         .format = VK_FORMAT_R5G6B5_UNORM_PACK16,
+         .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+      },
+      .drm_format = DRM_FORMAT_RGB565
+   },
 };
 
 static void
