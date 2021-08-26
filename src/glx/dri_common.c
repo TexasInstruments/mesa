@@ -247,6 +247,15 @@ driConfigEqual(const __DRIcoreExtension *core,
 
          break;
 
+      case __DRI_ATTRIB_MAX_PBUFFER_WIDTH:
+      case __DRI_ATTRIB_MAX_PBUFFER_HEIGHT:
+      case __DRI_ATTRIB_MAX_PBUFFER_PIXELS:
+	 if (config->drawableType & GLX_PBUFFER_BIT)
+            if (!scalarEqual(config, attrib, value))
+               return GL_FALSE;
+
+	 break;
+
       default:
          if (!scalarEqual(config, attrib, value))
             return GL_FALSE;
