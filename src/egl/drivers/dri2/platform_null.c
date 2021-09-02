@@ -95,6 +95,38 @@ static const struct dri2_null_format {
       .drm_format = DRM_FORMAT_RGB565,
       .pipe_format = PIPE_FORMAT_B5G6R5_UNORM,
    },
+   {
+      .drm_format = DRM_FORMAT_YUYV,
+      .pipe_format = PIPE_FORMAT_YUYV,
+   },
+   {
+      .drm_format = DRM_FORMAT_NV12,
+      .pipe_format = PIPE_FORMAT_NV12,
+   },
+   {
+      .drm_format = DRM_FORMAT_NV21,
+      .pipe_format = PIPE_FORMAT_NV21,
+   },
+   {
+      .drm_format = DRM_FORMAT_YUV420,
+      .pipe_format = PIPE_FORMAT_IYUV,
+   },
+   {
+      .drm_format = DRM_FORMAT_YVU420,
+      .pipe_format = PIPE_FORMAT_YV12,
+   },
+   {
+      .drm_format = DRM_FORMAT_UYVY,
+      .pipe_format = PIPE_FORMAT_UYVY,
+   },
+   {
+      .drm_format = DRM_FORMAT_YVYU,
+      .pipe_format = PIPE_FORMAT_YVYU,
+   },
+   {
+      .drm_format = DRM_FORMAT_VYUY,
+      .pipe_format = PIPE_FORMAT_VYUY,
+   },
 };
 
 
@@ -1053,16 +1085,17 @@ static bool
 add_fb_for_dri_image(struct dri2_egl_display *dri2_dpy, struct dri_image *image,
                      uint32_t *fb_id_out)
 {
-   uint64_t modifiers[4] = {0};
+   int handle, stride, width, height, format, l_mod, h_mod, offset;
+   uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+   uint64_t *modifiers = NULL, mods[4] = {0};
    uint32_t handles[4] = {0};
    uint32_t pitches[4] = {0};
    uint32_t offsets[4] = {0};
+   struct dri_image *p_image;
    uint32_t flags = 0;
-   int handle, stride, width, height, format, l_mod, h_mod;
    int format_idx;
+   int num_planes;
 
-   dri2_query_image(image, __DRI_IMAGE_ATTRIB_HANDLE, &handle);
-   dri2_query_image(image, __DRI_IMAGE_ATTRIB_STRIDE, &stride);
    dri2_query_image(image, __DRI_IMAGE_ATTRIB_WIDTH, &width);
    dri2_query_image(image, __DRI_IMAGE_ATTRIB_HEIGHT, &height);
    dri2_query_image(image, __DRI_IMAGE_ATTRIB_FOURCC, &format);
@@ -1077,8 +1110,38 @@ add_fb_for_dri_image(struct dri2_egl_display *dri2_dpy, struct dri_image *image,
       dri2_query_image(image, __DRI_IMAGE_ATTRIB_MODIFIER_UPPER, &h_mod);
       dri2_query_image(image, __DRI_IMAGE_ATTRIB_MODIFIER_LOWER, &l_mod);
 
-      modifiers[0] = combine_u32_into_u64((uint32_t) h_mod, (uint32_t) l_mod);
+      modifier = combine_u32_into_u64((uint32_t) h_mod, (uint32_t) l_mod);
+      modifiers = mods;
+
       flags |= DRM_MODE_FB_MODIFIERS;
+   }
+
+   dri2_query_image(image, __DRI_IMAGE_ATTRIB_NUM_PLANES, &num_planes);
+   if (num_planes <= 0)
+      num_planes = 1;
+
+   for (int i = 0; i < num_planes; i++) {
+      if (dri2_dpy->in_formats_enabled) {
+         assert(modifiers && modifier != DRM_FORMAT_MOD_INVALID);
+         modifiers[i] = modifier;
+      }
+
+      p_image = dri2_from_planar(image, i, NULL);
+      if (!p_image) {
+         assert(i == 0);
+         p_image = image;
+      }
+
+      dri2_query_image(p_image, __DRI_IMAGE_ATTRIB_STRIDE, &stride);
+      dri2_query_image(p_image, __DRI_IMAGE_ATTRIB_OFFSET, &offset);
+      dri2_query_image(p_image, __DRI_IMAGE_ATTRIB_HANDLE, &handle);
+
+      if (p_image != image)
+         dri2_destroy_image(p_image);
+
+      pitches[i] = (uint32_t) stride;
+      offsets[i] = (uint32_t) offset;
+      handles[i] = (uint32_t) handle;
    }
 
    return !drmModeAddFB2WithModifiers(dri2_dpy->fd_display_gpu, width, height,
@@ -1224,6 +1287,7 @@ create_surface(_EGLDisplay *disp, _EGLConfig *config, EGLint type,
    struct dri2_egl_config *dri2_config = dri2_egl_config(config);
    struct dri2_egl_surface *dri2_surf;
    const struct dri_config *dri_config;
+   unsigned int render_type;
    _EGLSurface *surf;
    int format_idx;
    bool ret;
@@ -1253,6 +1317,9 @@ create_surface(_EGLDisplay *disp, _EGLConfig *config, EGLint type,
       _eglError(EGL_BAD_ALLOC, "failed to create drawable");
        goto err_free_surface;
    }
+
+   if (!driGetConfigAttrib(dri_config, __DRI_ATTRIB_RENDER_TYPE, &render_type))
+      goto err_free_surface;
 
    format_idx = format_idx_get_from_config(dri2_dpy, dri_config);
    assert(format_idx != -1);
@@ -1595,6 +1662,17 @@ dri2_null_image_get_buffers(struct dri_drawable *driDrawable,
    return 1;
 }
 
+static unsigned
+dri2_null_get_capability(void *loaderPrivate, enum dri_loader_cap cap)
+{
+   switch (cap) {
+   case DRI_LOADER_CAP_YUV_SURFACE_IMG:
+      return 1;
+   default:
+      return 0;
+   }
+}
+
 static void
 dri2_null_flush_front_buffer(struct dri_drawable *driDrawable,
                              void *loaderPrivate)
@@ -1604,10 +1682,11 @@ dri2_null_flush_front_buffer(struct dri_drawable *driDrawable,
 }
 
 static const __DRIimageLoaderExtension image_loader_extension = {
-   .base = { __DRI_IMAGE_LOADER, 1 },
+   .base = { __DRI_IMAGE_LOADER, 2 },
 
    .getBuffers          = dri2_null_image_get_buffers,
    .flushFrontBuffer    = dri2_null_flush_front_buffer,
+   .getCapability       = dri2_null_get_capability,
 };
 
 static const __DRIextension *image_loader_extensions[] = {
@@ -1714,10 +1793,21 @@ dri2_null_add_configs_for_formats(_EGLDisplay *disp)
 
    for (unsigned i = 0; dri2_dpy->driver_configs[i]; i++) {
       struct dri2_egl_config *dri2_conf;
+      EGLint surface_type = EGL_WINDOW_BIT;
+      unsigned int render_type;
       int format_idx;
+
+      if (!driGetConfigAttrib(dri2_dpy->driver_configs[i],
+                               __DRI_ATTRIB_RENDER_TYPE,
+                               &render_type))
+         continue;
 
       format_idx = format_idx_get_from_config(dri2_dpy,
                                               dri2_dpy->driver_configs[i]);
+
+      if (!(render_type & __DRI_ATTRIB_YUV_BIT))
+         surface_type |= EGL_PBUFFER_BIT;
+
       if (format_idx == -1)
          continue;
 
@@ -1729,7 +1819,7 @@ dri2_null_add_configs_for_formats(_EGLDisplay *disp)
 
       dri2_conf = dri2_add_config(disp,
                                   dri2_dpy->driver_configs[i],
-                                  EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+                                  surface_type,
                                   NULL);
       if (dri2_conf)
          count++;
