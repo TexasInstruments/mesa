@@ -1048,9 +1048,19 @@ dri2_wl_swap_interval(_EGLDisplay *disp, _EGLSurface *surf, EGLint interval)
 }
 
 static void
-dri2_wl_release_buffers(struct dri2_egl_surface *dri2_surf)
+dri2_wl_release_buffers(struct dri2_egl_surface *dri2_surf,
+                        bool release_non_current,
+                        bool release_current)
 {
    for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
+      if (dri2_surf->current == &dri2_surf->color_buffers[i]) {
+         if (!release_current)
+            continue;
+      } else {
+         if (!release_non_current)
+            continue;
+      }
+
       if (dri2_surf->color_buffers[i].wayland_buffer.buffer) {
          if (dri2_surf->color_buffers[i].locked) {
             dri2_surf->color_buffers[i].wl_release = true;
@@ -1071,6 +1081,9 @@ dri2_wl_release_buffers(struct dri2_egl_surface *dri2_surf)
       dri2_surf->color_buffers[i].data = NULL;
       dri2_surf->color_buffers[i].age = 0;
    }
+
+   if (release_current)
+      dri2_surf->current = NULL;
 }
 
 /* Return list of modifiers that should be used to restrict the list of
@@ -1338,7 +1351,9 @@ wait_for_free_buffer(struct dri2_egl_display *dri2_dpy,
 
 static int
 get_back_bo(struct dri2_egl_surface *dri2_surf,
-            struct mesa_trace_flow *flow)
+            struct mesa_trace_flow *flow,
+            bool allow_preserve,
+            bool preserve_current)
 {
    struct dri2_egl_display *dri2_dpy =
       dri2_egl_display(dri2_surf->base.Resource.Display);
@@ -1513,6 +1528,28 @@ get_back_bo(struct dri2_egl_surface *dri2_surf,
    if (dri2_surf->back->dri_image == NULL)
       return -1;
 
+   if ((allow_preserve || preserve_current) &&
+       dri2_surf->base.SwapBehavior == EGL_BUFFER_PRESERVED &&
+       dri2_surf->current && dri2_surf->back->age != 1) {
+         _EGLContext *ctx = _eglGetCurrentContext();
+         struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
+
+         if (dri2_ctx) {
+            dri2_blit_image(dri2_ctx->dri_context,
+                            dri2_surf->back->dri_image,
+                            dri2_surf->current->dri_image,
+                            0, 0, dri2_surf->base.Width,
+                            dri2_surf->base.Height,
+                            0, 0, dri2_surf->base.Width,
+                            dri2_surf->base.Height,
+                            __BLIT_FLAG_FLUSH);
+            dri2_surf->back->age = 1;
+
+	    if (!preserve_current)
+               dri2_surf->current = NULL;
+	 }
+   }
+
    loader_wayland_buffer_set_flow(&dri2_surf->back->wayland_buffer, flow);
    dri2_surf->back->locked = true;
 
@@ -1545,10 +1582,13 @@ back_bo_to_dri_buffer(struct dri2_egl_surface *dri2_surf, __DRIbuffer *buffer)
 
 static int
 update_buffers(struct dri2_egl_surface *dri2_surf,
-               struct mesa_trace_flow *flow)
+               struct mesa_trace_flow *flow,
+               bool allow_preserve)
 {
    struct dri2_egl_display *dri2_dpy =
       dri2_egl_display(dri2_surf->base.Resource.Display);
+   bool preserve_current = false;
+   int res;
 
    MESA_TRACE_FUNC_FLOW(flow);
 
@@ -1561,12 +1601,20 @@ update_buffers(struct dri2_egl_surface *dri2_surf,
    }
 
    if (dri2_surf->resized || dri2_surf->received_dmabuf_feedback) {
-      dri2_wl_release_buffers(dri2_surf);
+      preserve_current = !dri2_surf->resized &&
+         dri2_surf->base.SwapBehavior == EGL_BUFFER_PRESERVED;
+
+      dri2_wl_release_buffers(dri2_surf, true, !preserve_current);
       dri2_surf->resized = false;
       dri2_surf->received_dmabuf_feedback = false;
    }
 
-   if (get_back_bo(dri2_surf, flow) < 0) {
+   res = get_back_bo(dri2_surf, flow, allow_preserve, preserve_current);
+
+   if (preserve_current)
+         dri2_wl_release_buffers(dri2_surf, false, true);
+
+   if (res < 0) {
       _eglError(EGL_BAD_ALLOC, "failed to allocate color buffer");
       return -1;
    }
@@ -1597,6 +1645,7 @@ update_buffers(struct dri2_egl_surface *dri2_surf,
 
 static int
 update_buffers_if_needed(struct dri2_egl_surface *dri2_surf,
+                         bool allow_preserve,
                          struct mesa_trace_flow *flow)
 {
    MESA_TRACE_FUNC_FLOW(flow);
@@ -1604,7 +1653,7 @@ update_buffers_if_needed(struct dri2_egl_surface *dri2_surf,
    if (dri2_surf->back != NULL)
       return 0;
 
-   return update_buffers(dri2_surf, flow);
+   return update_buffers(dri2_surf, flow, allow_preserve);
 }
 
 static int
@@ -1620,14 +1669,25 @@ image_get_buffers(struct dri_drawable *driDrawable, unsigned int format,
    buffers->image_mask = 0;
    buffers->front = NULL;
    buffers->back = NULL;
+   buffers->prev = NULL;
 
    if (buffer_mask & __DRI_IMAGE_BUFFER_BACK)
    {
-      if (update_buffers_if_needed(dri2_surf, &flow) < 0)
+      bool buffer_prev = buffer_mask & __DRI_IMAGE_BUFFER_PREV;
+
+      if (update_buffers_if_needed(dri2_surf, !buffer_prev, &flow) < 0)
          return 0;
 
       buffers->image_mask |= __DRI_IMAGE_BUFFER_BACK;
       buffers->back = dri2_surf->back->dri_image;
+
+      if (buffer_prev && dri2_surf->current &&
+          dri2_surf->base.SwapBehavior == EGL_BUFFER_PRESERVED)
+      {
+         buffers->image_mask |= __DRI_IMAGE_BUFFER_PREV;
+         buffers->prev = dri2_surf->current->dri_image;
+         dri2_surf->back->age = 1;
+      }
    }
 
    if (buffer_mask & __DRI_IMAGE_BUFFER_FRONT)
@@ -1908,7 +1968,7 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
 
    /* Make sure we have a back buffer in case we're swapping without ever
     * rendering. */
-   if (update_buffers_if_needed(dri2_surf, &flow) < 0)
+   if (update_buffers_if_needed(dri2_surf, true, &flow) < 0)
       return _eglError(EGL_BAD_ALLOC, "dri2_swap_buffers");
 
    if (draw->SwapInterval > 0) {
@@ -2006,7 +2066,7 @@ dri2_wl_query_buffer_age(_EGLDisplay *disp, _EGLSurface *surface)
    if (surface->Type != EGL_WINDOW_BIT)
       return 0;
 
-   if (update_buffers_if_needed(dri2_surf, &flow) < 0) {
+   if (update_buffers_if_needed(dri2_surf, true, &flow) < 0) {
       _eglError(EGL_BAD_ALLOC, "dri2_query_buffer_age");
       return -1;
    }
@@ -2578,7 +2638,7 @@ static const __DRIextension *kopper_loader_extensions[] = {
 };
 
 static void
-dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
+dri2_wl_add_configs_for_visuals(_EGLDisplay *disp, bool allow_preserve)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    unsigned int format_count[ARRAY_SIZE(dri2_wl_visuals)] = {0};
@@ -2610,8 +2670,11 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
       }
 
       surface_type = EGL_WINDOW_BIT;
-      if (dri2_wl_visuals[idx].wl_drm_format != WL_DRM_FORMAT_YUYV)
+      if (dri2_wl_visuals[idx].wl_drm_format != DRM_FORMAT_YUYV)
          surface_type |= EGL_PBUFFER_BIT;
+
+      if (allow_preserve)
+         surface_type |= EGL_SWAP_BEHAVIOR_PRESERVED_BIT;
 
       EGLint attr_list[] = {
          EGL_NATIVE_VISUAL_ID, dri2_wl_visuals[idx].wl_drm_format,
@@ -2817,7 +2880,7 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
       disp->Extensions.WL_create_wayland_buffer_from_image = EGL_TRUE;
 #endif
 
-   dri2_wl_add_configs_for_visuals(disp);
+   dri2_wl_add_configs_for_visuals(disp, true);
 
    disp->Extensions.EXT_buffer_age = EGL_TRUE;
    disp->Extensions.EXT_swap_buffers_with_damage = EGL_TRUE;
@@ -2915,7 +2978,7 @@ swrast_update_buffers(struct dri2_egl_surface *dri2_surf)
        (dri2_surf->base.Width != dri2_surf->wl_win->width ||
         dri2_surf->base.Height != dri2_surf->wl_win->height)) {
 
-      dri2_wl_release_buffers(dri2_surf);
+      dri2_wl_release_buffers(dri2_surf, true, true);
 
       dri2_surf->base.Width = dri2_surf->wl_win->width;
       dri2_surf->base.Height = dri2_surf->wl_win->height;
@@ -3346,7 +3409,7 @@ dri2_initialize_wayland_swrast(_EGLDisplay *disp)
 
    dri2_wl_setup_swap_interval(disp);
 
-   dri2_wl_add_configs_for_visuals(disp);
+   dri2_wl_add_configs_for_visuals(disp, false);
 
 #ifdef HAVE_BIND_WL_DISPLAY
    if (disp->Options.Zink && dri2_dpy->fd_render_gpu >= 0 &&

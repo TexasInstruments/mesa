@@ -860,12 +860,15 @@ enum __DRIimageBufferMask {
     * OpenGL ES API and little change to the SurfaceFlinger API.
     */
    __DRI_IMAGE_BUFFER_SHARED = (1 << 2),
+#define DRI_IMAGE_HAS_BUFFER_PREV
+   __DRI_IMAGE_BUFFER_PREV = (1 << 31),
 };
 
 struct __DRIimageList {
    uint32_t image_mask;
    struct dri_image *back;
    struct dri_image *front;
+   struct dri_image *prev;
 };
 
 #define __DRI_IMAGE_LOADER "DRI_IMAGE_LOADER"
