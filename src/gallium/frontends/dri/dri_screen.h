@@ -165,6 +165,8 @@ extern const struct __DriverAPIRec galliumsw_driver_api;
 extern const __DRIextension *galliumsw_driver_extensions[];
 extern const __DRIconfigOptionsExtension gallium_config_options;
 
+extern const struct __DriverAPIRec pvr_driver_api;
+extern const __DRIextension *pvr_driver_extensions[];
 #endif
 
 /* vim: set sw=3 ts=8 sts=3 expandtab: */

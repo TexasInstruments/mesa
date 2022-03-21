@@ -193,16 +193,16 @@ if gallium_drivers.contains('auto')
     if ['x86', 'x86_64'].contains(host_machine.cpu_family())
       gallium_drivers = [
         'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'svga', 'swrast',
-        'iris'
+        'iris', 'pvr'
       ]
     elif ['arm', 'aarch64'].contains(host_machine.cpu_family())
       gallium_drivers = [
         'kmsro', 'v3d', 'vc4', 'freedreno', 'etnaviv', 'nouveau',
-        'tegra', 'virgl', 'lima', 'panfrost', 'swrast'
+        'tegra', 'virgl', 'lima', 'panfrost', 'swrast', 'pvr'
       ]
     elif ['mips', 'mips64'].contains(host_machine.cpu_family())
       gallium_drivers = [
-        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'swrast'
+        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'swrast', 'pvr'
       ]
     else
       error('Unknown architecture @0@. Please pass -Dgallium-drivers to set driver options. Patches gladly accepted to fix this.'.format(
@@ -235,8 +235,20 @@ with_gallium_swr = gallium_drivers.contains('swr')
 with_gallium_lima = gallium_drivers.contains('lima')
 with_gallium_zink = gallium_drivers.contains('zink')
 with_gallium_d3d12 = gallium_drivers.contains('d3d12')
+with_gallium_pvr = gallium_drivers.contains('pvr')
 
 with_gallium = gallium_drivers.length() != 0
+
+if with_gallium_pvr
+  gallium_pvr_alias = get_option('gallium-pvr-alias')
+  if gallium_pvr_alias == 'pvr'
+    gallium_pvr_alias = ''
+  endif
+  with_gallium_pvr_alias = gallium_pvr_alias != ''
+else
+  gallium_pvr_alias = ''
+  with_gallium_pvr_alias = false
+endif
 
 if with_gallium and system_has_kms_drm
   _glx = get_option('glx')
