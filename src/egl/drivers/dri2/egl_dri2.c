@@ -736,10 +736,12 @@ static const struct dri_extension_match swrast_core_extensions[] = {
 };
 
 static const struct dri_extension_match optional_core_extensions[] = {
+   { __DRI2_ROBUSTNESS, 1, offsetof(struct dri2_egl_display, robustness), true },
    {__DRI2_CONFIG_QUERY, 1, offsetof(struct dri2_egl_display, config), true},
    {__DRI2_FENCE, 2, offsetof(struct dri2_egl_display, fence), true},
    {__DRI2_BUFFER_DAMAGE, 1, offsetof(struct dri2_egl_display, buffer_damage),
     true},
+   { __DRI2_RENDERER_QUERY, 1, offsetof(struct dri2_egl_display, rendererQuery), true },
    {__DRI2_INTEROP, 1, offsetof(struct dri2_egl_display, interop), true},
    {__DRI2_FLUSH_CONTROL, 1, offsetof(struct dri2_egl_display, flush_control),
     true},
@@ -806,6 +808,20 @@ dri2_load_driver_swrast(_EGLDisplay *disp)
                                   ARRAY_SIZE(swrast_driver_extensions));
 }
 
+static unsigned
+dri2_renderer_query_integer(struct dri2_egl_display *dri2_dpy, int param)
+{
+   const __DRI2rendererQueryExtension *rendererQuery = dri2_dpy->rendererQuery;
+   unsigned int value = 0;
+
+   if (!rendererQuery ||
+       rendererQuery->queryInteger(dri2_dpy->dri_screen_render_gpu, param,
+                                   &value) == -1)
+      return 0;
+
+   return value;
+}
+
 static const char *
 dri2_query_driver_name(_EGLDisplay *disp)
 {
@@ -826,12 +842,54 @@ dri2_query_driver_config(_EGLDisplay *disp)
    return ret;
 }
 
+static EGLBoolean
+have_pipe_screen(_EGLDisplay *disp)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri_screen *screen = dri_screen(dri2_dpy->dri_screen_render_gpu);
+
+   return screen->base.screen != NULL;
+}
+
 static int
 get_screen_param(_EGLDisplay *disp, enum pipe_cap param)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri_screen *screen = dri_screen(dri2_dpy->dri_screen_render_gpu);
-   return screen->base.screen->get_param(screen->base.screen, param);
+
+   if (have_pipe_screen(disp)) {
+      return screen->base.screen->get_param(screen->base.screen, param);
+   } else {
+      int qparam;
+
+      switch (param) {
+      case PIPE_CAP_DEVICE_RESET_STATUS_QUERY:
+         return dri2_dpy->robustness ? 1 : 0;
+      default:
+         break;
+      }
+
+      switch (param) {
+      case PIPE_CAP_CONTEXT_PRIORITY_MASK:
+         qparam = __DRI2_RENDERER_HAS_CONTEXT_PRIORITY;
+         break;
+      case PIPE_CAP_MAX_TEXTURE_3D_LEVELS:
+         qparam = __DRI2_RENDERER_HAS_TEXTURE_3D;
+         break;
+      case PIPE_CAP_DEVICE_PROTECTED_SURFACE:
+         qparam = __DRI2_RENDERER_HAS_PROTECTED_SURFACE;
+         break;
+      case PIPE_CAP_DEVICE_PROTECTED_CONTEXT:
+         qparam = __DRI2_RENDERER_HAS_PROTECTED_CONTEXT;
+         break;
+      default:
+         _eglLog(_EGL_WARNING, "egl: No renderer query mapping for %d",
+                 (int) param);
+         return 0;
+      }
+
+      return (int) dri2_renderer_query_integer(dri2_dpy, qparam);
+   }
 }
 
 void
@@ -866,7 +924,6 @@ dri2_setup_screen(_EGLDisplay *disp)
 
    assert(dri2_dpy->image_driver || dri2_dpy->dri2 || dri2_dpy->swrast);
    disp->Extensions.KHR_create_context = EGL_TRUE;
-   disp->Extensions.KHR_create_context_no_error = EGL_TRUE;
    disp->Extensions.KHR_no_config_context = EGL_TRUE;
    disp->Extensions.KHR_surfaceless_context = EGL_TRUE;
 
@@ -884,9 +941,12 @@ dri2_setup_screen(_EGLDisplay *disp)
 
    disp->Extensions.EXT_pixel_format_float = EGL_TRUE;
 
-   if (pscreen->is_format_supported(pscreen, PIPE_FORMAT_B8G8R8A8_SRGB,
+   if ((have_pipe_screen(disp) && pscreen->is_format_supported(pscreen,
+                                    PIPE_FORMAT_B8G8R8A8_SRGB,
                                     PIPE_TEXTURE_2D, 0, 0,
-                                    PIPE_BIND_RENDER_TARGET)) {
+                                    PIPE_BIND_RENDER_TARGET)) ||
+       dri2_renderer_query_integer(dri2_dpy,
+                                   __DRI2_RENDERER_HAS_FRAMEBUFFER_SRGB)) {
       disp->Extensions.KHR_gl_colorspace = EGL_TRUE;
    }
 
@@ -897,6 +957,11 @@ dri2_setup_screen(_EGLDisplay *disp)
     * EXT_create_context_robustness. */
    disp->Extensions.EXT_query_reset_notification_strategy =
       disp->Extensions.EXT_create_context_robustness;
+
+   if (have_pipe_screen(disp) ||
+       dri2_renderer_query_integer(dri2_dpy,
+                                   __DRI2_RENDERER_HAS_NO_ERROR_CONTEXT))
+      disp->Extensions.KHR_create_context_no_error = EGL_TRUE;
 
    if (dri2_dpy->fence) {
       disp->Extensions.KHR_fence_sync = EGL_TRUE;

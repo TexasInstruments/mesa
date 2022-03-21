@@ -68,6 +68,8 @@ struct dri_context
     */
    void *loaderPrivate;
 
+   void *driverPrivate;
+
    struct {
        int draw_stamp;
        int read_stamp;

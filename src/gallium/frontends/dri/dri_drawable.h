@@ -65,6 +65,8 @@ struct dri_drawable
     */
    void *loaderPrivate;
 
+   void *driverPrivate;
+
    /**
     * Reference count for number of context's currently bound to this
     * drawable.
@@ -137,6 +139,9 @@ dri_get_drawable(struct dri_drawable *drawable)
 struct dri_drawable *
 dri_create_drawable(struct dri_screen *screen, const struct gl_config *visual,
                     bool isPixmap, void *loaderPrivate);
+
+void
+dri_destroy_drawable(struct dri_drawable *drawable);
 
 void
 dri_put_drawable(struct dri_drawable *drawable);

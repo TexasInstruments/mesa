@@ -75,6 +75,15 @@ driQueryRendererIntegerCommon(struct dri_screen *screen, int param, unsigned int
    return -1;
 }
 
+int
+dri2_query_renderer_integer_common(__DRIscreen *_screen, int param,
+                                   unsigned int *value)
+{
+   struct dri_screen *screen = dri_screen(_screen);
+
+   return driQueryRendererIntegerCommon(screen, param, value);
+}
+
 static int
 dri2_query_renderer_integer(__DRIscreen *_screen, int param,
                             unsigned int *value)
