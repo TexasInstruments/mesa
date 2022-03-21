@@ -145,7 +145,7 @@ dri_loader_get_cap(struct dri_screen *screen, enum dri_loader_cap cap)
  * Currently the only cause of failure is a bad parameter (i.e., unsupported
  * \c format).
  */
-static __DRIconfig **
+__DRIconfig **
 driCreateConfigs(mesa_format format,
                  const uint8_t * depth_bits, const uint8_t * stencil_bits,
                  unsigned num_depth_stencil_bits,
@@ -342,7 +342,7 @@ driCreateConfigs(mesa_format format,
     return configs;
 }
 
-static __DRIconfig **
+__DRIconfig **
 driConcatConfigs(__DRIconfig **a, __DRIconfig **b)
 {
     __DRIconfig **all;
@@ -795,11 +795,7 @@ dri_destroy_screen(struct dri_screen *screen)
    free(screen->options.force_gl_renderer);
    free(screen->options.mesa_extension_override);
 
-   driDestroyOptionCache(&screen->optionCache);
-   driDestroyOptionInfo(&screen->optionInfo);
-
-   /* The caller in dri_util preserves the fd ownership */
-   free(screen);
+   /* The remaining cleanup been moved into driDestroyScreen */
 }
 
 static void

@@ -130,16 +130,16 @@ if gallium_drivers.contains('auto')
     if ['x86', 'x86_64'].contains(host_machine.cpu_family())
       gallium_drivers = [
         'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'svga', 'swrast',
-        'iris', 'crocus', 'i915'
+        'iris', 'crocus', 'i915', 'pvr'
       ]
     elif ['arm', 'aarch64'].contains(host_machine.cpu_family())
       gallium_drivers = [
         'v3d', 'vc4', 'freedreno', 'etnaviv', 'nouveau', 'svga',
-        'tegra', 'virgl', 'lima', 'panfrost', 'swrast', 'iris'
+        'tegra', 'virgl', 'lima', 'panfrost', 'swrast', 'iris', 'pvr'
       ]
     elif ['mips', 'mips64', 'riscv32', 'riscv64'].contains(host_machine.cpu_family())
       gallium_drivers = [
-        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'swrast'
+        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'swrast', 'pvr'
       ]
     elif ['loongarch64'].contains(host_machine.cpu_family())
       gallium_drivers = [
@@ -176,6 +176,7 @@ with_gallium_lima = gallium_drivers.contains('lima')
 with_gallium_zink = gallium_drivers.contains('zink')
 with_gallium_d3d12 = gallium_drivers.contains('d3d12')
 with_gallium_asahi = gallium_drivers.contains('asahi')
+with_gallium_pvr = gallium_drivers.contains('pvr')
 foreach gallium_driver : gallium_drivers
   pre_args += '-DHAVE_@0@'.format(gallium_driver.to_upper())
 endforeach
@@ -197,6 +198,17 @@ with_gallium_kmsro = system_has_kms_drm and [
   with_gallium_v3d,
   with_gallium_vc4,
 ].contains(true)
+
+if with_gallium_pvr
+  gallium_pvr_alias = get_option('gallium-pvr-alias')
+  if gallium_pvr_alias == 'pvr'
+    gallium_pvr_alias = ''
+  endif
+  with_gallium_pvr_alias = gallium_pvr_alias != ''
+else
+  gallium_pvr_alias = ''
+  with_gallium_pvr_alias = false
+endif
 
 with_dri = false
 if with_gallium and system_has_kms_drm

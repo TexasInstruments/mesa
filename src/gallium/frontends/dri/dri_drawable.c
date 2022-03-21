@@ -187,7 +187,7 @@ fail:
    return NULL;
 }
 
-static void
+void
 dri_destroy_drawable(struct dri_drawable *drawable)
 {
    struct dri_screen *screen = drawable->screen;
@@ -206,18 +206,6 @@ dri_destroy_drawable(struct dri_drawable *drawable)
 
    FREE(drawable->damage_rects);
    FREE(drawable);
-}
-
-void
-dri_put_drawable(struct dri_drawable *drawable)
-{
-   if (drawable) {
-      int refcount = --drawable->refcount;
-      assert(refcount >= 0);
-
-      if (!refcount)
-         dri_destroy_drawable(drawable);
-   }
 }
 
 /**

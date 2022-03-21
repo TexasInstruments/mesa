@@ -41,8 +41,8 @@
 
 #include <stdbool.h>
 #include "dri_util.h"
-#include "dri_context.h"
 #include "dri_screen.h"
+#include "dri_context.h"
 #include "dri_drawable.h"
 #include "util/u_endian.h"
 #include "util/u_memory.h"
@@ -114,6 +114,13 @@ driCreateNewScreen2(int scrn, int fd,
        if (strcmp(driver_extensions[i]->name, __DRI_MESA) == 0) {
           mesa = (__DRImesaCoreExtension *)driver_extensions[i];
        }
+       if (strcmp(driver_extensions[i]->name, __DRI_DRIVER_API) == 0) {
+          screen->driver = (__DRIDriverAPIExtension *)driver_extensions[i];
+       }
+    }
+    if (mesa == NULL || (screen->driver && mesa->initScreen)) {
+        free(screen);
+        return NULL;
     }
 
     setupLoaderExtensions(screen, loader_extensions);
@@ -136,7 +143,11 @@ driCreateNewScreen2(int scrn, int fd,
     driParseConfigFiles(&screen->optionCache, &screen->optionInfo, screen->myNum,
                         "dri2", NULL, NULL, NULL, 0, NULL, 0);
 
-    *driver_configs = mesa->initScreen(screen);
+    if (screen->driver)
+        *driver_configs = screen->driver->initScreen(screen);
+    else
+        *driver_configs = mesa->initScreen(screen);
+
     if (*driver_configs == NULL) {
         dri_destroy_screen(screen);
         return NULL;
@@ -192,6 +203,18 @@ swkmsCreateNewScreen(int scrn, int fd,
                               driver_configs, data);
 }
 
+#if defined(GALLIUM_PVR)
+static __DRIscreen *
+pvrCreateNewScreen(int scrn, int fd,
+		   const __DRIextension **extensions,
+		   const __DRIconfig ***driver_configs, void *data)
+{
+   return driCreateNewScreen2(scrn, fd, extensions,
+                              pvr_driver_extensions,
+                              driver_configs, data);
+}
+#endif
+
 /** swrast driver createNewScreen entrypoint. */
 static __DRIscreen *
 driSWRastCreateNewScreen(int scrn, const __DRIextension **extensions,
@@ -221,12 +244,22 @@ driSWRastCreateNewScreen2(int scrn, const __DRIextension **extensions,
 static void driDestroyScreen(__DRIscreen *psp)
 {
     if (psp) {
+        struct dri_screen *screen = dri_screen(psp);
+
         /* No interaction with the X-server is possible at this point.  This
          * routine is called after XCloseDisplay, so there is no protocol
          * stream open to the X-server anymore.
          */
 
-        dri_destroy_screen(dri_screen(psp));
+        if (screen->driver)
+            screen->driver->destroyScreen(screen);
+        else
+            dri_destroy_screen(screen);
+
+        driDestroyOptionCache(&screen->optionCache);
+        driDestroyOptionInfo(&screen->optionInfo);
+
+        FREE(screen);
     }
 }
 
@@ -622,10 +655,31 @@ driCreateContextAttribs(__DRIscreen *psp, int api,
     if (*error != __DRI_CTX_ERROR_SUCCESS)
        return NULL;
 
-    struct dri_context *ctx = dri_create_context(screen, mesa_api,
-                                                 modes, &ctx_config, error,
-                                                 dri_context(shared),
-                                                 data);
+    struct dri_context *ctx;
+
+    if (screen->driver) {
+        ctx = CALLOC_STRUCT(dri_context);
+        if (!ctx) {
+            *error = __DRI_CTX_ERROR_NO_MEMORY;
+            return NULL;
+        }
+
+        ctx->loaderPrivate = data;
+        ctx->screen = screen;
+
+        if (!screen->driver->createContext(mesa_api, modes, ctx,
+                                           &ctx_config, error,
+                                           dri_context(shared))) {
+            FREE(ctx);
+            return NULL;
+        }
+    } else {
+        ctx = dri_create_context(screen, mesa_api,
+                                 modes, &ctx_config, error,
+                                 dri_context(shared),
+                                 data);
+    }
+
     return opaque_dri_context(ctx);
 }
 
@@ -658,8 +712,16 @@ driCreateNewContext(__DRIscreen *screen, const __DRIconfig *config,
 static void
 driDestroyContext(__DRIcontext *pcp)
 {
-    if (pcp)
-        dri_destroy_context(dri_context(pcp));
+    if (pcp) {
+        struct dri_context *ctx = dri_context(pcp);
+
+        if (ctx->screen->driver) {
+            ctx->screen->driver->destroyContext(ctx);
+            FREE(ctx);
+	} else {
+            dri_destroy_context(ctx);
+	}
+    }
 }
 
 static int
@@ -696,8 +758,35 @@ static int driBindContext(__DRIcontext *pcp,
     if (!pcp)
         return GL_FALSE;
 
-    return dri_make_current(dri_context(pcp), dri_drawable(pdp),
-                            dri_drawable(prp));
+    struct dri_context *ctx = dri_context(pcp);
+
+    if (ctx->screen->driver)
+    {
+        struct dri_drawable *draw = dri_drawable(pdp);
+        struct dri_drawable *read = dri_drawable(prp);
+
+        assert(!ctx->draw);
+        assert(!ctx->read);
+
+        if ((draw && !read) || (!draw && read))
+            return GL_FALSE;
+
+        if (!ctx->screen->driver->makeCurrent(ctx, draw, read))
+            return GL_FALSE;
+
+        ctx->draw = draw;
+        ctx->read = read;
+
+        if (draw)
+            dri_get_drawable(draw);
+
+        if (read && read != draw)
+            dri_get_drawable(read);
+
+        return GL_TRUE;
+    } else {
+        return dri_make_current(ctx, dri_drawable(pdp), dri_drawable(prp));
+    }
 }
 
 /**
@@ -726,11 +815,33 @@ static int driUnbindContext(__DRIcontext *pcp)
     if (pcp == NULL)
         return GL_FALSE;
 
-    /*
-    ** Call dri_unbind_context before checking for valid drawables
-    ** to handle surfaceless contexts properly.
-    */
-    return dri_unbind_context(dri_context(pcp));
+    struct dri_context *ctx = dri_context(pcp);
+
+    if (ctx->screen->driver)
+    {
+        ctx->screen->driver->unbindContext(ctx);
+
+        if (!ctx->draw && !ctx->read)
+            return GL_TRUE;
+
+        assert(ctx->draw);
+
+        dri_put_drawable(ctx->draw);
+
+        if (ctx->read && ctx->read != ctx->draw)
+            dri_put_drawable(ctx->read);
+
+        ctx->draw = NULL;
+        ctx->read = NULL;
+
+        return GL_TRUE;
+    } else {
+        /*
+        ** Call dri_unbind_context before checking for valid drawables
+        ** to handle surfaceless contexts properly.
+        */
+        return dri_unbind_context(ctx);
+   }
 }
 
 /*@}*/
@@ -743,10 +854,47 @@ driCreateNewDrawable(__DRIscreen *psp,
     assert(data != NULL);
 
     struct dri_screen *screen = dri_screen(psp);
-    struct dri_drawable *drawable =
-       screen->create_drawable(screen, &config->modes, GL_FALSE, data);
+    struct dri_drawable *drawable;
+
+    if (screen->driver) {
+        drawable = CALLOC_STRUCT(dri_drawable);
+        if (!drawable)
+	    return NULL;
+
+        drawable->loaderPrivate = data;
+
+        drawable->screen = screen;
+        drawable->refcount = 1;
+
+        if (!screen->driver->createBuffer(screen, drawable, &config->modes,
+                                          GL_FALSE)) {
+           FREE(drawable);
+           return NULL;
+        }
+    } else {
+        drawable = screen->create_drawable(screen, &config->modes, GL_FALSE,
+                                           data);
+    }
 
     return opaque_dri_drawable(drawable);
+}
+
+void
+dri_put_drawable(struct dri_drawable *drawable)
+{
+    if (drawable) {
+        int refcount = --drawable->refcount;
+        assert(refcount >= 0);
+
+        if (!refcount) {
+            if (drawable->screen->driver) {
+                drawable->screen->driver->destroyBuffer(drawable);
+                FREE(drawable);
+            } else {
+                dri_destroy_drawable(drawable);
+            }
+        }
+    }
 }
 
 static void
@@ -762,7 +910,12 @@ dri2AllocateBuffer(__DRIscreen *psp,
 {
    struct dri_screen *screen = dri_screen(psp);
 
-   return screen->allocate_buffer(screen, attachment, format, width, height);
+   if (screen->driver)
+      return screen->driver->allocateBuffer(screen, attachment, format, width,
+                                            height);
+   else
+      return screen->allocate_buffer(screen, attachment, format, width,
+                                     height);
 }
 
 static void
@@ -770,7 +923,10 @@ dri2ReleaseBuffer(__DRIscreen *psp, __DRIbuffer *buffer)
 {
    struct dri_screen *screen = dri_screen(psp);
 
-   screen->release_buffer(buffer);
+   if (screen->driver)
+      screen->driver->releaseBuffer(screen, buffer);
+   else
+      screen->release_buffer(buffer);
 }
 
 
@@ -899,6 +1055,21 @@ const __DRIdri2Extension swkmsDRI2Extension = {
     .createNewScreen2           = driCreateNewScreen2,
 };
 
+#if defined(GALLIUM_PVR)
+const __DRIdri2Extension pvrDRI2Extension = {
+    .base = { __DRI_DRI2, 4 },
+
+    .createNewScreen            = pvrCreateNewScreen,
+    .createNewDrawable          = driCreateNewDrawable,
+    .createNewContext           = driCreateNewContext,
+    .getAPIMask                 = driGetAPIMask,
+    .createNewContextForAPI     = driCreateNewContextForAPI,
+    .allocateBuffer             = dri2AllocateBuffer,
+    .releaseBuffer              = dri2ReleaseBuffer,
+    .createContextAttribs       = driCreateContextAttribs,
+    .createNewScreen2           = driCreateNewScreen2,
+};
+#endif
 #endif
 
 const __DRIswrastExtension driSWRastExtension = {

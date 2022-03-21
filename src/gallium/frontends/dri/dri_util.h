@@ -36,6 +36,7 @@
 
 #include <GL/gl.h>
 #include <GL/internal/dri_interface.h>
+#include <GL/internal/driver_interface.h>
 #include "kopper_interface.h"
 #include "main/formats.h"
 #include "main/glconfig.h"
@@ -60,6 +61,10 @@ extern const __DRIdri2Extension driDRI2Extension;
 extern const __DRIdri2Extension swkmsDRI2Extension;
 extern const __DRI2configQueryExtension dri2ConfigQueryExtension;
 extern const __DRI2flushControlExtension dri2FlushControlExtension;
+
+#if defined(GALLIUM_PVR)
+extern const __DRIdri2Extension pvrDRI2Extension;
+#endif
 
 /**
  * Description of the attributes used to create a config.
