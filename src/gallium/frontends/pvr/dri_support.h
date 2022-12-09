@@ -33,46 +33,89 @@ THE SOFTWARE.
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <imgpixfmts.h>
+
+typedef enum
+{
+	PVRDRI_DEVICE_TYPE_INVALID = 0,
+	PVRDRI_DEVICE_TYPE_UNKNOWN,
+	PVRDRI_DEVICE_TYPE_DISPLAY,
+	PVRDRI_DEVICE_TYPE_RENDER,
+} PVRDRIDeviceType;
+
 /* API type. */
 typedef enum
 {
 	PVRDRI_API_NONE = 0,
+	PVRDRI_API_GL = 1,
 	PVRDRI_API_GLES1 = 2,
 	PVRDRI_API_GLES2 = 3,
 	PVRDRI_API_CL = 4,
-	PVRDRI_API_GL_COMPAT = 5,
-	PVRDRI_API_GL_CORE = 6,
 } PVRDRIAPIType;
+
+/* API sub type. */
+typedef enum
+{
+	PVRDRI_API_SUB_NONE,
+	PVRDRI_API_SUB_GL_COMPAT,
+	PVRDRI_API_SUB_GL_CORE,
+} PVRDRIAPISubType;
 
 typedef enum
 {
-	PVRDRI_CONFIG_ATTRIB_INVALID = 0,
-	PVRDRI_CONFIG_ATTRIB_RENDERABLE_TYPE = 1,
-	PVRDRI_CONFIG_ATTRIB_RGB_MODE = 2,
-	PVRDRI_CONFIG_ATTRIB_DOUBLE_BUFFER_MODE = 3,
-	PVRDRI_CONFIG_ATTRIB_RED_BITS = 4,
-	PVRDRI_CONFIG_ATTRIB_GREEN_BITS = 5,
-	PVRDRI_CONFIG_ATTRIB_BLUE_BITS = 6,
-	PVRDRI_CONFIG_ATTRIB_ALPHA_BITS = 7,
-	PVRDRI_CONFIG_ATTRIB_RGB_BITS = 8,
-	PVRDRI_CONFIG_ATTRIB_DEPTH_BITS = 9,
-	PVRDRI_CONFIG_ATTRIB_STENCIL_BITS = 10,
-	PVRDRI_CONFIG_ATTRIB_SAMPLE_BUFFERS = 11,
-	PVRDRI_CONFIG_ATTRIB_SAMPLES = 12,
-	PVRDRI_CONFIG_ATTRIB_BIND_TO_TEXTURE_RGB = 13,
-	PVRDRI_CONFIG_ATTRIB_BIND_TO_TEXTURE_RGBA = 14,
-	PVRDRI_CONFIG_ATTRIB_YUV_ORDER = 15,
-	PVRDRI_CONFIG_ATTRIB_YUV_NUM_OF_PLANES = 16,
-	PVRDRI_CONFIG_ATTRIB_YUV_SUBSAMPLE = 17,
-	PVRDRI_CONFIG_ATTRIB_YUV_DEPTH_RANGE = 18,
-	PVRDRI_CONFIG_ATTRIB_YUV_CSC_STANDARD = 19,
-	PVRDRI_CONFIG_ATTRIB_YUV_PLANE_BPP = 20,
-	PVRDRI_CONFIG_ATTRIB_RED_MASK = 21,
-	PVRDRI_CONFIG_ATTRIB_GREEN_MASK = 22,
-	PVRDRI_CONFIG_ATTRIB_BLUE_MASK = 23,
-	PVRDRI_CONFIG_ATTRIB_ALPHA_MASK = 24,
-	PVRDRI_CONFIG_ATTRIB_SRGB_CAPABLE = 25
-} PVRDRIConfigAttrib;
+	PVRDRI_IMAGE = 1,
+	PVRDRI_IMAGE_FROM_NAMES,
+	PVRDRI_IMAGE_FROM_EGLIMAGE,
+	PVRDRI_IMAGE_FROM_DMABUFS,
+} PVRDRIImageType;
+
+typedef enum
+{
+	PVRDRI_EGLIMAGE_NONE = 0,
+	PVRDRI_EGLIMAGE_IMGEGL,
+	PVRDRI_EGLIMAGE_IMGOCL,
+} PVRDRIEGLImageType;
+
+/* The context flags match their __DRI_CTX_FLAG and EGL_CONTEXT counterparts */
+#define PVRDRI_CONTEXT_FLAG_DEBUG			0x00000001
+#define PVRDRI_CONTEXT_FLAG_FORWARD_COMPATIBLE		0x00000002
+#define PVRDRI_CONTEXT_FLAG_ROBUST_BUFFER_ACCESS	0x00000004
+
+/* The context error codes match their __DRI_CTX_ERROR counterparts */
+#define PVRDRI_CONTEXT_ERROR_SUCCESS			0
+/* Out of memory */
+#define PVRDRI_CONTEXT_ERROR_NO_MEMORY			1
+/* Unsupported API */
+#define PVRDRI_CONTEXT_ERROR_BAD_API			2
+/* Unsupported version of API */
+#define PVRDRI_CONTEXT_ERROR_BAD_VERSION		3
+/* Unsupported context flag or combination of flags */
+#define PVRDRI_CONTEXT_ERROR_BAD_FLAG			4
+/* Unrecognised context attribute */
+#define PVRDRI_CONTEXT_ERROR_UNKNOWN_ATTRIBUTE		5
+/* Unrecognised context flag */
+#define PVRDRI_CONTEXT_ERROR_UNKNOWN_FLAG		6
+
+/*
+ * The context priority defines match their __DRI_CTX counterparts, and
+ * the context priority values used by the DDK.
+ */
+#define PVRDRI_CONTEXT_PRIORITY_LOW	0
+#define PVRDRI_CONTEXT_PRIORITY_MEDIUM	1
+#define PVRDRI_CONTEXT_PRIORITY_HIGH	2
+
+/* The image error flags match their __DRI_IMAGE_ERROR counterparts */
+#define PVRDRI_IMAGE_ERROR_SUCCESS		0
+#define PVRDRI_IMAGE_ERROR_BAD_ALLOC		1
+#define PVRDRI_IMAGE_ERROR_BAD_MATCH		2
+#define PVRDRI_IMAGE_ERROR_BAD_PARAMETER	3
+#define PVRDRI_IMAGE_ERROR_BAD_ACCESS		4
+
+/* The buffer flags match their __DRI_IMAGE_USE counterparts */
+#define PVDRI_BUFFER_USE_SHARE		0x0001
+#define PVDRI_BUFFER_USE_SCANOUT	0x0002
+#define PVDRI_BUFFER_USE_CURSOR		0x0004
+#define PVDRI_BUFFER_USE_LINEAR		0x0008
 
 /* EGL_RENDERABLE_TYPE mask bits */
 #define PVRDRI_API_BIT_GLES		0x0001
@@ -87,500 +130,263 @@ typedef enum
 #define PVRDRI_MESA_FORMAT_B5G6R5_UNORM		3
 #define PVRDRI_MESA_FORMAT_R8G8B8A8_UNORM	4
 #define PVRDRI_MESA_FORMAT_R8G8B8X8_UNORM	5
-#define PVRDRI_MESA_FORMAT_YCBCR		6
-#define PVRDRI_MESA_FORMAT_YUV420_2PLANE	7
-#define PVRDRI_MESA_FORMAT_YVU420_2PLANE	8
-#define PVRDRI_MESA_FORMAT_B8G8R8A8_SRGB	9
-#define PVRDRI_MESA_FORMAT_R8G8B8A8_SRGB	10
-#define PVRDRI_MESA_FORMAT_YUV420_3PLANE	11
-#define PVRDRI_MESA_FORMAT_YVU420_3PLANE	12
-#define PVRDRI_MESA_FORMAT_YCBCR_REV		13
-#define PVRDRI_MESA_FORMAT_YVYU        	14
-#define PVRDRI_MESA_FORMAT_VYUY        	15
 
+typedef struct 
+{
+	IMG_PIXFMT          ePixFormat;
+	uint32_t            uiWidth;
+	uint32_t            uiHeight;
+	uint32_t            uiStrideInBytes;
+} PVRDRIBufferAttribs;
+
+typedef struct
+{
+	int sampleBuffers;
+	int samples;
+
+	int redBits;
+	int greenBits;
+	int blueBits;
+	int alphaBits;
+
+	int rgbBits;
+	int depthBits;
+	int stencilBits;
+
+	bool doubleBufferMode;
+
+	int bindToTextureRgb;
+	int bindToTextureRgba;
+} PVRDRIConfigInfo;
+
+typedef struct EGLImageRec __EGLImage;
 typedef struct __DRIimageRec __DRIimage;
 
-typedef struct PVRDRIConfigRec PVRDRIConfig;
+/* PVRDRI interface opaque types */
+typedef struct PVRDRIScreenImplRec PVRDRIScreenImpl;
+typedef struct PVRDRIContextImplRec PVRDRIContextImpl;
+typedef struct PVRDRIDrawableImplRec PVRDRIDrawableImpl;
+typedef struct PVRDRIBufferImplRec PVRDRIBufferImpl;
 
-/* The PVRDRI_GL defines match their EGL_GL counterparts */
-#define PVRDRI_GL_RENDERBUFFER			0x30B9
-#define PVRDRI_GL_TEXTURE_2D			0x30B1
-#define PVRDRI_GL_TEXTURE_3D			0x30B2
-#define PVRDRI_GL_TEXTURE_CUBE_MAP_POSITIVE_X	0x30B3
-#define PVRDRI_GL_TEXTURE_CUBE_MAP_NEGATIVE_X	0x30B4
-#define PVRDRI_GL_TEXTURE_CUBE_MAP_POSITIVE_Y	0x30B5
-#define PVRDRI_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y	0x30B6
-#define PVRDRI_GL_TEXTURE_CUBE_MAP_POSITIVE_Z	0x30B7
-#define PVRDRI_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z	0x30B8
+typedef struct PVRDRIDrawable_TAG PVRDRIDrawable;
 
-struct __DRIscreenRec;
-struct __DRIcontextRec;
-struct __DRIdrawableRec;
+PVRDRIDeviceType PVRDRIGetDeviceTypeFromFd(int iFd);
 
-struct __DRIconfigRec;
+bool PVRDRIIsFirstScreen(PVRDRIScreenImpl *psScreenImpl);
 
-struct DRISUPScreen;
-struct DRISUPContext;
-struct DRISUPDrawable;
-struct DRISUPBuffer;
+uint32_t PVRDRIPixFmtGetDepth(IMG_PIXFMT eFmt);
+uint32_t PVRDRIPixFmtGetBPP(IMG_PIXFMT eFmt);
+uint32_t PVRDRIPixFmtGetBlockSize(IMG_PIXFMT eFmt);
 
-struct PVRDRIContextConfig
+/* ScreenImpl functions */
+PVRDRIScreenImpl *PVRDRICreateScreenImpl(int iFd);
+void PVRDRIDestroyScreenImpl(PVRDRIScreenImpl *psScreenImpl);
+
+int PVRDRIAPIVersion(PVRDRIAPIType eAPI,
+		     PVRDRIAPISubType eAPISub,
+		     PVRDRIScreenImpl *psScreenImpl);
+
+void *PVRDRIEGLGetLibHandle(PVRDRIAPIType eAPI,
+			    PVRDRIScreenImpl *psScreenImpl);
+
+typedef void (*PVRDRIGLAPIProc)(void);
+PVRDRIGLAPIProc PVRDRIEGLGetProcAddress(PVRDRIAPIType eAPI,
+					  PVRDRIScreenImpl *psScreenImpl,
+					  const char *psProcName);
+
+bool PVRDRIEGLFlushBuffers(PVRDRIAPIType eAPI,
+                           PVRDRIScreenImpl *psScreenImpl,
+                           PVRDRIContextImpl *psContextImpl,
+                           PVRDRIDrawableImpl *psDrawableImpl,
+                           bool bFlushAllSurfaces,
+                           bool bSwapBuffers,
+                           bool bWaitForHW);
+bool PVRDRIEGLFreeResources(PVRDRIScreenImpl *psPVRScreenImpl);
+void PVRDRIEGLMarkRendersurfaceInvalid(PVRDRIAPIType eAPI,
+                                       PVRDRIScreenImpl *psScreenImpl,
+                                       PVRDRIContextImpl *psContextImpl);
+void PVRDRIEGLSetFrontBufferCallback(PVRDRIAPIType eAPI,
+                                        PVRDRIScreenImpl *psScreenImpl,
+                                        PVRDRIDrawableImpl *psDrawableImpl,
+                                        void (*pfnCallback)(PVRDRIDrawable *));
+
+unsigned PVRDRICreateContextImpl(PVRDRIContextImpl **ppsContextImpl,
+				 PVRDRIAPIType eAPI,
+				 PVRDRIAPISubType eAPISub,
+				 PVRDRIScreenImpl *psScreenImpl,
+				 const PVRDRIConfigInfo *psConfigInfo,
+				 unsigned uMajorVersion,
+				 unsigned uMinorVersion,
+				 uint32_t uFlags,
+				 bool bNotifyReset,
+				 unsigned uPriority,
+				 PVRDRIContextImpl *psSharedContextImpl);
+
+void PVRDRIDestroyContextImpl(PVRDRIContextImpl *psContextImpl,
+			      PVRDRIAPIType eAPI,
+			      PVRDRIScreenImpl *psScreenImpl);
+
+bool PVRDRIMakeCurrentGC(PVRDRIAPIType eAPI,
+			 PVRDRIScreenImpl *psScreenImpl,
+			 PVRDRIContextImpl *psContextImpl,
+			 PVRDRIDrawableImpl *psWriteImpl,
+			 PVRDRIDrawableImpl *psReadImpl);
+
+void PVRDRIMakeUnCurrentGC(PVRDRIAPIType eAPI,
+			   PVRDRIScreenImpl *psScreenImpl);
+
+unsigned PVRDRIGetImageSource(PVRDRIAPIType eAPI,
+			      PVRDRIScreenImpl *psScreenImpl,
+			      PVRDRIContextImpl *psContextImpl,
+			      uint32_t  uiTarget,
+			      uintptr_t uiBuffer,
+			      uint32_t  uiLevel,
+			      __EGLImage *psEGLImage);
+
+bool PVRDRI2BindTexImage(PVRDRIAPIType eAPI,
+			 PVRDRIScreenImpl *psScreenImpl,
+			 PVRDRIContextImpl *psContextImpl,
+			 PVRDRIDrawableImpl *psDrawableImpl);
+
+void PVRDRI2ReleaseTexImage(PVRDRIAPIType eAPI,
+			    PVRDRIScreenImpl *psScreenImpl,
+			    PVRDRIContextImpl *psContextImpl,
+			    PVRDRIDrawableImpl *psDrawableImpl);
+
+/* DrawableImpl functions */
+PVRDRIDrawableImpl *PVRDRICreateDrawableImpl(PVRDRIDrawable *psPVRDrawable);
+void PVRDRIDestroyDrawableImpl(PVRDRIDrawableImpl *psScreenImpl);
+bool PVREGLDrawableCreate(PVRDRIScreenImpl *psScreenImpl,
+                          PVRDRIDrawableImpl *psDrawableImpl);
+bool PVREGLDrawableRecreate(PVRDRIScreenImpl *psScreenImpl,
+                            PVRDRIDrawableImpl *psDrawableImpl);
+bool PVREGLDrawableDestroy(PVRDRIScreenImpl *psScreenImpl,
+                           PVRDRIDrawableImpl *psDrawableImpl);
+void PVREGLDrawableDestroyConfig(PVRDRIDrawableImpl *psDrawableImpl);
+
+/* Buffer functions */
+PVRDRIBufferImpl *PVRDRIBufferCreate(PVRDRIScreenImpl *psScreenImpl,
+				     int iWidth,
+				     int iHeight,
+				     unsigned int uiBpp,
+				     unsigned int uiUseFlags,
+				     unsigned int *puiStride);
+
+PVRDRIBufferImpl *PVRDRIBufferCreateFromNames(PVRDRIScreenImpl *psScreenImpl,
+					   int iWidth,
+					   int iHeight,
+					   unsigned uiNumPlanes,
+					   const int *piName,
+					   const int *piStride,
+					   const int *piOffset,
+					   const unsigned int *puiWidthShift,
+					   const unsigned int *puiHeightShift);
+
+PVRDRIBufferImpl *PVRDRIBufferCreateFromName(PVRDRIScreenImpl *psScreenImpl,
+					     int iName,
+					     int iWidth,
+					     int iHeight,
+					     int iStride,
+					     int iOffset);
+
+PVRDRIBufferImpl *PVRDRIBufferCreateFromFds(PVRDRIScreenImpl *psScreenImpl,
+					   int iWidth,
+					   int iHeight,
+					   unsigned uiNumPlanes,
+					   const int *piFd,
+					   const int *piStride,
+					   const int *piOffset,
+					   const unsigned int *puiWidthShift,
+					   const unsigned int *puiHeightShift);
+
+void PVRDRIBufferDestroy(PVRDRIBufferImpl *psBuffer);
+
+int PVRDRIBufferGetFd(PVRDRIBufferImpl *psBuffer);
+
+int PVRDRIBufferGetHandle(PVRDRIBufferImpl *psBuffer);
+
+int PVRDRIBufferGetName(PVRDRIBufferImpl *psBuffer);
+
+
+/* Image functions */
+__EGLImage *PVRDRIEGLImageCreate(void);
+__EGLImage *PVRDRIEGLImageCreateFromBuffer(int iWidth,
+					   int iHeight,
+					   int iStride,
+					   IMG_PIXFMT ePixelFormat,
+					   IMG_YUV_COLORSPACE eColourSpace,
+					   IMG_YUV_CHROMA_INTERP eChromaUInterp,
+					   IMG_YUV_CHROMA_INTERP eChromaVInterp,
+					   PVRDRIBufferImpl *psBuffer);
+
+__EGLImage *PVRDRIEGLImageDup(__EGLImage *psIn);
+
+void PVRDRIEGLImageSetCallbackData(__EGLImage *psEGLImage, __DRIimage *image);
+
+void PVRDRIEGLImageDestroyExternal(PVRDRIScreenImpl *psScreenImpl,
+                                   __EGLImage *psEGLImage,
+				   PVRDRIEGLImageType eglImageType);
+void PVRDRIEGLImageFree(__EGLImage *psEGLImage);
+
+void PVRDRIEGLImageGetAttribs(__EGLImage *psEGLImage, PVRDRIBufferAttribs *psAttribs);
+
+/* Sync functions */
+void *PVRDRICreateFenceImpl(PVRDRIAPIType eAPI,
+			    PVRDRIScreenImpl *psScreenImpl,
+			    PVRDRIContextImpl *psContextImpl);
+
+void PVRDRIDestroyFenceImpl(void *psDRIFence);
+
+bool PVRDRIClientWaitSyncImpl(PVRDRIAPIType eAPI,
+			      PVRDRIContextImpl *psContextImpl,
+			      void *psDRIFence,
+			      bool bFlushCommands,
+			      bool bTimeout,
+			      uint64_t uiTimeout);
+
+bool PVRDRIServerWaitSyncImpl(PVRDRIAPIType eAPI,
+			      PVRDRIContextImpl *psContextImpl,
+			      void *psDRIFence);
+
+void PVRDRIDestroyFencesImpl(PVRDRIScreenImpl *psScreenImpl);
+
+/* EGL interface functions */
+bool PVRDRIEGLDrawableConfigFromGLMode(PVRDRIDrawableImpl *psPVRDrawable,
+				       PVRDRIConfigInfo *psConfigInfo,
+				       int supportedAPIs,
+				       IMG_PIXFMT ePixFmt);
+
+/* Callbacks into non-impl layer */
+typedef struct
 {
-	unsigned int uMajorVersion;
-	unsigned int uMinorVersion;
-	uint32_t uFlags;
+	bool                 (*DrawableRecreate)(PVRDRIDrawable *psPVRDrawable);
+	bool                 (*DrawableGetParameters)(PVRDRIDrawable *psPVRDrawable,
+	                                              PVRDRIBufferImpl **ppsDstBuffer,
+	                                              PVRDRIBufferImpl **ppsAccumBuffer,
+	                                              PVRDRIBufferAttribs *psAttribs,
+	                                              bool *pbDoubleBuffered);
+	PVRDRIImageType      (*ImageGetSharedType)(__DRIimage *image);
+	PVRDRIBufferImpl    *(*ImageGetSharedBuffer)(__DRIimage *image);
+	__EGLImage           *(*ImageGetSharedEGLImage)(__DRIimage *image);
+	__EGLImage           *(*ImageGetEGLImage)(__DRIimage *image);
+	__DRIimage          *(*ScreenGetDRIImage)(void *hEGLImage);
+	void                 (*RefImage)(__DRIimage *image);
+	void                 (*UnrefImage)(__DRIimage *image);
+} PVRDRICallbacks;
 
-	int iResetStrategy;
-	unsigned int uPriority;
-	int iReleaseBehavior;
-};
+void PVRDRIRegisterCallbacks(PVRDRICallbacks *callbacks);
 
-/*
- * PVR DRI Support interface V2.
- * This structure may change over time, as older interfaces become obsolete.
- * For example, the v0 interface may be removed if superseded by newer
- * interfaces.
- */
-struct  PVRDRISupportInterfaceV2
-{
-	struct
-	{
-		struct DRISUPScreen *(*CreateScreen)
-			(struct __DRIscreenRec *psDRIScreen,
-			 int iFD,
-			 bool bUseInvalidate,
-			 void *pvLoaderPrivate,
-			 const struct __DRIconfigRec ***pppsConfigs,
-			 int *piMaxGLES1Version,
-			 int *piMaxGLES2Version);
+/* PVR utility support functions */
+bool PVRDRIMesaFormatSupported(unsigned fmt);
+unsigned PVRDRIDepthStencilBitArraySize(void);
+const uint8_t *PVRDRIDepthBitsArray(void);
+const uint8_t *PVRDRIStencilBitsArray(void);
+unsigned PVRDRIMSAABitArraySize(void);
+const uint8_t *PVRDRIMSAABitsArray(void);
+uint32_t PVRDRIMaxPBufferWidth(void);
+uint32_t PVRDRIMaxPBufferHeight(void);
 
-		void (*DestroyScreen)
-			(struct DRISUPScreen *psDRISUPScreen);
-
-		unsigned int (*CreateContext)
-			(PVRDRIAPIType eAPI,
-			 PVRDRIConfig *psPVRDRIConfig,
-			 struct PVRDRIContextConfig *psCtxConfig,
-			 struct __DRIcontextRec *psDRIContext,
-			 struct DRISUPContext *psDRISUPSharedContext,
-			 struct DRISUPScreen *psDRISUPScreen,
-			 struct DRISUPContext **ppsDRISUPContext);
-
-		void (*DestroyContext)
-			(struct DRISUPContext *psDRISUPContext);
-
-		struct DRISUPDrawable *(*CreateDrawable)
-			(struct __DRIdrawableRec *psDRIDrawable,
-			 struct DRISUPScreen *psDRISUPDrawable,
-			 void *pvLoaderPrivate,
-			 PVRDRIConfig *psPVRDRIConfig);
-
-		void (*DestroyDrawable)
-			(struct DRISUPDrawable *psDRISUPDrawable);
-
-		bool (*MakeCurrent)
-			(struct DRISUPContext *psDRISUPContext,
-			 struct DRISUPDrawable *psDRISUPWrite,
-			 struct DRISUPDrawable *psDRISUPRead);
-
-		bool (*UnbindContext)
-			(struct DRISUPContext *psDRISUPContext);
-
-		struct DRISUPBuffer *(*AllocateBuffer)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 unsigned int uAttachment,
-			 unsigned int uFormat,
-			 int iWidth,
-			 int iHeight,
-			 unsigned int *puName,
-			 unsigned int *puPitch,
-			 unsigned int *puCPP,
-			 unsigned int *puFlags);
-
-		void (*ReleaseBuffer)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 struct DRISUPBuffer *psDRISUPBuffer);
-
-		/* Functions to support the DRI TexBuffer extension */
-		void (*SetTexBuffer2)
-			(struct DRISUPContext *psDRISUPContext,
-			 int iTarget,
-			 int iFormat,
-			 struct DRISUPDrawable *psDRISUPDrawable);
-
-		void (*ReleaseTexBuffer)
-			(struct DRISUPContext *psDRISUPContext,
-			 int iTarget,
-			 struct DRISUPDrawable *psDRISUPDrawable);
-
-		/* Functions to support the DRI Flush extension */
-		void (*Flush)
-			(struct DRISUPDrawable *psDRISUPDrawable);
-
-		void (*Invalidate)
-			(struct DRISUPDrawable *psDRISUPDrawable);
-
-		void (*FlushWithFlags)
-			(struct DRISUPContext *psDRISUPContext,
-			 struct DRISUPDrawable *psDRISUPDrawable,
-			 unsigned int uFlags,
-			 unsigned int uThrottleReason);
-
-		/* Functions to support the DRI Image extension */
-		__DRIimage *(*CreateImageFromName)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 int iName,
-			 int iPitch,
-			 void *pvLoaderPrivate);
-
-		__DRIimage *(*CreateImageFromRenderbuffer)
-			(struct DRISUPContext *psDRISUPContext,
-			int iRenderBuffer,
-			void *pvLoaderPrivate);
-
-		void (*DestroyImage)
-			(__DRIimage *psImage);
-
-		__DRIimage *(*CreateImage)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 unsigned int uUse,
-			 void *pvLoaderPrivate);
-
-		bool (*QueryImage)
-			(__DRIimage *psImage,
-			 int iAttrib,
-			 int *iValue);
-
-		__DRIimage *(*DupImage)
-			(__DRIimage *psImage,
-			 void *pvLoaderPrivate);
-
-		bool (*ValidateImageUsage)
-			(__DRIimage *psImage,
-			 unsigned int uUse);
-
-		__DRIimage *(*CreateImageFromNames)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 int *piNames,
-			 int iNumNames,
-			 int *piStrides,
-			 int *piOffsets,
-			 void *pvLoaderPrivate);
-			 __DRIimage *(*FromPlanar)(__DRIimage *psImage,
-			 int iPlane,
-			 void *pvLoaderPrivate);
-
-		__DRIimage *(*CreateImageFromTexture)
-			(struct DRISUPContext *psDRISUPContext,
-			 int iTarget,
-			 unsigned int uTexture,
-			 int iDepth,
-			 int iLevel,
-			 unsigned int *puError,
-			 void *pvLoaderPrivate);
-
-		__DRIimage *(*CreateImageFromFDs)
-			(struct DRISUPScreen *psDRISUPcreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 int *piFDs,
-			 int iNumFDs,
-			 int *piStrides,
-			 int *piOffsets,
-			 void *pvLoaderPrivate);
-
-		__DRIimage *(*CreateImageFromDMABufs)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 int *piFDs,
-			 int iNumFDs,
-			 int *piStrides,
-			 int *piOffsets,
-			 unsigned int uColorSpace,
-			 unsigned int uSampleRange,
-			 unsigned int uHorizSiting,
-			 unsigned int uVertSiting,
-			 unsigned int *puError,
-			 void *pvLoaderPrivate);
-
-		int (*GetImageCapabilities)
-			(struct DRISUPScreen *psDRISUPScreen);
-
-		void (*BlitImage)
-			(struct DRISUPContext *psDRISUPContext,
-			 __DRIimage *psDst,
-			 __DRIimage *psSrc,
-			 int iDstX0,
-			 int iDstY0,
-			 int iDstWidth,
-			 int iDstHeight,
-			 int iSrcX0, int
-			 iSrcY0,
-			 int iSrcWidth,
-			 int iSrcHeight,
-			 int iFlushFlag);
-
-		void *(*MapImage)
-			(struct DRISUPContext *psDRISUPContext,
-			 __DRIimage *psImage,
-			 int iX0,
-			 int iY0,
-			 int iWidth,
-			 int iHeight,
-			 unsigned int uFlags,
-			 int *piStride,
-			 void **ppvData);
-
-		void (*UnmapImage)
-			(struct DRISUPContext *psDRISUPContext,
-			 __DRIimage *psImage,
-			 void *pvData);
-
-		__DRIimage *(*CreateImageWithModifiers)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 const uint64_t *puModifiers,
-			 const unsigned int uModifierCount,
-			 void *pvLoaderPrivate);
-
-		__DRIimage *(*CreateImageFromDMABufs2)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iWidth,
-			 int iHeight,
-			 int iFourCC,
-			 uint64_t uModifier,
-			 int *piFDs,
-			 int iNumFDs,
-			 int *piStrides,
-			 int *piOffsets,
-			 unsigned int uColorSpace,
-			 unsigned int uSampleRange,
-			 unsigned int uHorizSiting,
-			 unsigned int uVertSiting,
-			 unsigned int *puError,
-			 void *pvLoaderPrivate);
-
-		bool (*QueryDMABufFormats)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iMax,
-			 int *piFormats,
-			 int *piCount);
-
-		bool (*QueryDMABufModifiers)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iFourCC,
-			 int iMax,
-			 uint64_t *puModifiers,
-			 unsigned int *piExternalOnly,
-			 int *piCount);
-
-		bool (*QueryDMABufFormatModifierAttribs)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 uint32_t uFourcc,
-			 uint64_t uModifier,
-			 int iAttrib,
-			 uint64_t *puValue);
-
-		__DRIimage *(*CreateImageFromRenderBuffer2)
-			(struct DRISUPContext *psDRISUPContext,
-			 int iRenderBuffer,
-			 void *pvLoaderPrivate,
-			 unsigned int *puError);
-
-		__DRIimage *(*CreateImageFromBuffer)
-			(struct DRISUPContext *psDRISUPContext,
-			 int iTarget,
-			 void *pvBuffer,
-			 unsigned int *puError,
-			 void *pvLoaderPrivate);
-
-		/* Functions to support the DRI Renderer Query extension */
-		int (*QueryRendererInteger)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iAttribute,
-			 unsigned int *puValue);
-
-		int (*QueryRendererString)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 int iAttribute,
-			 const char **ppszValue);
-
-		/* Functions to support the DRI Fence extension */
-		void *(*CreateFence)
-			(struct DRISUPContext *psDRISUPContext);
-
-		void (*DestroyFence)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 void *pvFence);
-
-		bool (*ClientWaitSync)
-			(struct DRISUPContext *psDRISUPContext,
-			 void *pvFence,
-			 unsigned int uFlags,
-			 uint64_t uTimeout);
-
-		void (*ServerWaitSync)
-			(struct DRISUPContext *psDRISUPContext,
-			 void *pvFence,
-			 unsigned int uFlags);
-
-		unsigned int (*GetFenceCapabilities)
-			(struct DRISUPScreen *psDRISUPScreen);
-
-		void *(*CreateFenceFD)
-			(struct DRISUPContext *psDRISUPContext,
-			 int iFD);
-
-		int (*GetFenceFD)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 void *pvFence);
-
-		unsigned int (*GetNumAPIProcs)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 PVRDRIAPIType eAPI);
-
-		const char *(*GetAPIProcName)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 PVRDRIAPIType eAPI,
-			 unsigned int uIndex);
-
-		void *(*GetAPIProcAddress)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 PVRDRIAPIType eAPI,
-			 unsigned int uIndex);
-
-		void (*SetDamageRegion)
-			(struct DRISUPDrawable *psDRISUPDrawable,
-			 unsigned int uNRects,
-			 int *piRects);
-	} v0;
-	/* The v1 interface is an extension of v0, so v0 is required as well */
-	struct {
-		void *(*GetFenceFromCLEvent)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 intptr_t iCLEvent);
-	} v1;
-	/* The v2 interface is an extension of v1, so v1 is required as well */
-	struct {
-		int (*GetAPIVersion)
-			(struct DRISUPScreen *psDRISUPScreen,
-			 PVRDRIAPIType eAPI);
-	} v2;
-	/*
-	 * The v3 interface has no additional entry points. It indicates that
-	 * OpenCL event based fences are available, provided the DDK is built
-	 * with OpenCL support.
-	 */
-	/* The v4 interface is an extension of v3, so v3 is required as well */
-	struct {
-		bool (*HaveGetFenceFromCLEvent)(void);
-	} v4;
-};
-
-struct PVRDRIImageList {
-	uint32_t uImageMask;
-	__DRIimage *psBack;
-	__DRIimage *psFront;
-	__DRIimage *psPrev;
-};
-
-/*
- * PVR DRI Support callback interface V2.
- * This structure may change over time, as older interfaces become obsolete.
- * For example, the v0 interface may be removed if superseded by newer
- * interfaces.
- */
-struct PVRDRICallbacksV2
-{
-	struct {
-		bool (*RegisterSupportInterface)
-			(const void *psInterface,
-			 unsigned int uVersion,
-			 unsigned int uMinVersion);
-
-		int (*GetBuffers)
-			(struct __DRIdrawableRec *psDRIDrawable,
-			 unsigned int uFourCC,
-			 uint32_t *puStamp,
-			 void *pvLoaderPrivate,
-			 uint32_t uBufferMask,
-			 struct PVRDRIImageList *psImageList);
-
-		bool (*CreateConfigs)
-			(struct __DRIconfigRec ***pppsConfigs,
-			 struct __DRIscreenRec *psDRIScreen,
-			 int iPVRDRIMesaFormat,
-			 const uint8_t *puDepthBits,
-			 const uint8_t *puStencilBits,
-			 unsigned int uNumDepthStencilBits,
-			 const unsigned int *puDBModes,
-			 unsigned int uNumDBModes,
-			 const uint8_t *puMSAASamples,
-			 unsigned int uNumMSAAModes,
-			 bool bEnableAccum,
-			 bool bColorDepthMatch,
-			 bool bMutableRenderBuffer,
-			 int iYUVDepthRange,
-			 int iYUVCSCStandard,
-			 uint32_t uMaxPbufferWidth,
-			 uint32_t uMaxPbufferHeight);
-
-		struct __DRIconfigRec **(*ConcatConfigs)
-			(struct __DRIscreenRec *psDRIScreen,
-			 struct __DRIconfigRec **ppsConfigA,
-			 struct __DRIconfigRec **ppsConfigB);
-
-		bool (*ConfigQuery)
-			(const PVRDRIConfig *psConfig,
-			 PVRDRIConfigAttrib eConfigAttrib,
-			 unsigned int *puValueOut);
-
-		__DRIimage *(*LookupEGLImage)
-			(struct __DRIscreenRec *psDRIScreen,
-			 void *pvImage,
-			 void *pvLoaderPrivate);
-
-		unsigned int (*GetCapability)
-			(struct __DRIscreenRec *psDRIScreen,
-			 unsigned int uCapability);
-	} v0;
-	/* The v1 interface is an extension of v0, so v0 is required as well */
-	struct {
-		void (*FlushFrontBuffer)
-			(struct __DRIdrawableRec *psDRIDrawable,
-			 void *pvLoaderPrivate);
-	} v1;
-	/* The v2 interface is an extension of v1, so v1 is required as well */
-	struct {
-		int (*GetDisplayFD)
-			(struct __DRIscreenRec *psDRIScreen,
-			 void *pvLoaderPrivate);
-	} v2;
-	/* The v3 interface is an extension of v2, so v2 is required as well */
-	struct {
-		void *(*DrawableGetReferenceHandle)
-			(struct __DRIdrawableRec *psDRIDrawable);
-
-		void (*DrawableAddReference)
-			(void *pvReferenceHandle);
-
-		void (*DrawableRemoveReference)
-			(void *pvReferenceHandle);
-	} v3;
-};
+unsigned PVRDRIGetNumAPIFuncs(PVRDRIAPIType eAPI);
+const char *PVRDRIGetAPIFunc(PVRDRIAPIType eAPI, unsigned index);
 
 #endif /* defined(__PVRDRIIFCE_H__) */

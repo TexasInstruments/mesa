@@ -24,16 +24,12 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <assert.h>
 
-#include "drm-uapi/drm_fourcc.h"
-
 #include "utils.h"
-#include "dri_util.h"
-#include "pvrdri.h"
+#include "GL/gl.h"
 
-#define MESSAGE_LENGTH_MAX 1024
+#include "pvrdri.h"
 
 /*
  * Define before including android/log.h and dlog.h as this is used by these
@@ -41,233 +37,455 @@
  */
 #define LOG_TAG "PVR-MESA"
 
-#if defined(HAVE_ANDROID_PLATFORM)
+#ifdef HAVE_ANDROID_PLATFORM
 #include <android/log.h>
-#define err_printf(f, args...) ((void)__android_log_print(ANDROID_LOG_ERROR, LOG_TAG, f, ##args))
-#define dbg_printf(f, args...) ((void)__android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, f, ##args))
-#elif defined(HAVE_TIZEN_PLATFORM)
-#include <dlog.h>
-#define err_printf(f, args...) LOGE(f, ##args)
-#define dbg_printf(f, args...) LOGD(f, ##args)
+#define err_vprintf(f, args) ((void)__android_log_vprint(ANDROID_LOG_ERROR, "PVR-MESA", f, args))
+#define dbg_vprintf(f, args) ((void)__android_log_vprint(ANDROID_LOG_DEBUG, "PVR-MESA", f, args))
 #else
-#define err_printf(f, args...) fprintf(stderr, f "\n", ##args)
-#define dbg_printf(f, args...) fprintf(stderr, "LibGL: " f "\n", ##args)
+#define err_vprintf(f, args) vfprintf(stderr, f, args)
+#define dbg_vprintf(f, args) vfprintf(stderr, f, args)
 #endif /* HAVE_ANDROID_PLATFORM */
 
 /* Standard error message */
-void PRINTFLIKE(1, 2)
-errorMessage(const char *f, ...)
+void __attribute__((format(printf, 1, 2))) errorMessage(const char *f, ...)
 {
-   char message[MESSAGE_LENGTH_MAX];
-   va_list args;
+	va_list args;
 
-   va_start(args, f);
-   vsnprintf(message, sizeof message, f, args);
-   va_end(args);
-
-   err_printf("%s", message);
+	va_start(args, f);
+	err_vprintf(f, args);
+	va_end(args);
 }
 
-void PRINTFLIKE(1, 2)
-__driUtilMessage(const char *f, ...)
+void __attribute__((format(printf, 1, 2))) __driUtilMessage(const char *f, ...)
 {
-   char message[MESSAGE_LENGTH_MAX];
-   va_list args;
+	va_list args;
+	char *ev;
 
-   /*
-    * On Android and Tizen, always print messages; otherwise, only print if
-    * the environment variable LIBGL_DEBUG=verbose.
-    */
-#if !defined(HAVE_ANDROID_PLATFORM) && !defined(HAVE_TIZEN_PLATFORM)
-   char *ev = getenv("LIBGL_DEBUG");
-
-   if (!ev || strcmp(ev, "verbose") != 0)
-      return;
+#ifdef HAVE_ANDROID_PLATFORM
+	va_start(args, f);
+	dbg_vprintf(f, args);
+	va_end(args);
+#else
+	ev = getenv("LIBGL_DEBUG");
+	if (ev != NULL && (strcmp(ev, "verbose") == 0))
+	{
+		fputs("LibGL: ", stderr);
+		va_start(args, f);
+		dbg_vprintf(f, args);
+		va_end(args);
+		fputc('\n', stderr);
+	}
 #endif
-
-   va_start(args, f);
-   vsnprintf(message, sizeof message, f, args);
-   va_end(args);
-
-   dbg_printf("%s", message);
 }
 
-mesa_format
-PVRDRIMesaFormatToMesaFormat(int pvrdri_mesa_format)
-{
-   switch (pvrdri_mesa_format) {
-   case PVRDRI_MESA_FORMAT_NONE:
-      return MESA_FORMAT_NONE;
-   case PVRDRI_MESA_FORMAT_B8G8R8A8_UNORM:
-      return MESA_FORMAT_B8G8R8A8_UNORM;
-   case PVRDRI_MESA_FORMAT_B8G8R8X8_UNORM:
-      return MESA_FORMAT_B8G8R8X8_UNORM;
-   case PVRDRI_MESA_FORMAT_B5G6R5_UNORM:
-      return MESA_FORMAT_B5G6R5_UNORM;
-   case PVRDRI_MESA_FORMAT_R8G8B8A8_UNORM:
-      return MESA_FORMAT_R8G8B8A8_UNORM;
-   case PVRDRI_MESA_FORMAT_R8G8B8X8_UNORM:
-      return MESA_FORMAT_R8G8B8X8_UNORM;
-   case PVRDRI_MESA_FORMAT_YCBCR:
-      return MESA_FORMAT_YCBCR;
-   case PVRDRI_MESA_FORMAT_YUV420_2PLANE:
-      return MESA_FORMAT_YUV420_2PLANE;
-   case PVRDRI_MESA_FORMAT_YVU420_2PLANE:
-      return MESA_FORMAT_YVU420_2PLANE;
-   case PVRDRI_MESA_FORMAT_B8G8R8A8_SRGB:
-      return MESA_FORMAT_B8G8R8A8_SRGB;
-   case PVRDRI_MESA_FORMAT_R8G8B8A8_SRGB:
-      return MESA_FORMAT_R8G8B8A8_SRGB;
-   case PVRDRI_MESA_FORMAT_YUV420_3PLANE:
-         return MESA_FORMAT_YUV420_3PLANE;
-   case PVRDRI_MESA_FORMAT_YVU420_3PLANE:
-         return MESA_FORMAT_YVU420_3PLANE;
-   case PVRDRI_MESA_FORMAT_YCBCR_REV:
-      return MESA_FORMAT_YCBCR_REV;
-   case PVRDRI_MESA_FORMAT_YVYU:
-      return MESA_FORMAT_YVYU;
-   case PVRDRI_MESA_FORMAT_VYUY:
-      return MESA_FORMAT_VYUY;
-   default:
-      __driUtilMessage("%s: Unknown format: %d", __func__, pvrdri_mesa_format);
-      break;
-   }
+#define	PVRDRIMesaFormatEntry(f) {f, PVRDRI_ ## f }
 
-   return MESA_FORMAT_NONE;
+static const struct
+{
+	mesa_format eMesa;
+	unsigned uPVRDRI;
+} g_asMesaFormats[] = {
+	PVRDRIMesaFormatEntry(MESA_FORMAT_B8G8R8A8_UNORM),
+	PVRDRIMesaFormatEntry(MESA_FORMAT_B8G8R8X8_UNORM),
+	PVRDRIMesaFormatEntry(MESA_FORMAT_R8G8B8A8_UNORM),
+	PVRDRIMesaFormatEntry(MESA_FORMAT_R8G8B8X8_UNORM),
+	PVRDRIMesaFormatEntry(MESA_FORMAT_B5G6R5_UNORM),
+};
+
+static const PVRDRIImageFormat g_asFormats[] =
+{
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+		.iDRIFourCC = DRM_FORMAT_R8,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_R,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+
+
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_B8G8R8A8_UNORM,
+		.iDRIFourCC = DRM_FORMAT_ARGB8888,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_ARGB8888,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGBA,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_B8G8R8A8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_ARGB8888,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_R8G8B8A8_UNORM,
+		.iDRIFourCC = DRM_FORMAT_ABGR8888,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_ABGR8888,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGBA,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8G8B8A8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_ABGR8888,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_B8G8R8X8_UNORM,
+		.iDRIFourCC = DRM_FORMAT_XRGB8888,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_XRGB8888,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGB,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_B8G8R8X8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_XRGB8888,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_R8G8B8X8_UNORM,
+		.iDRIFourCC = DRM_FORMAT_XBGR8888,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_XBGR8888,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGB,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8G8B8X8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_XBGR8888,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_B5G6R5_UNORM,
+		.iDRIFourCC = DRM_FORMAT_RGB565,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_RGB565,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGB,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_B5G6R5_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_RGB565,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+#if defined(__DRI_IMAGE_FORMAT_ARGB4444)
+	/* We patch this format into Mesa */
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_B4G4R4A4_UNORM,
+		.iDRIFourCC = DRM_FORMAT_ARGB4444,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_ARGB4444,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGBA,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_B4G4R4A4_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_ARGB4444,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+#endif
+#if defined(__DRI_IMAGE_FORMAT_ARGB1555)
+	/* We patch this format into Mesa */
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_B5G5R5A1_UNORM,
+		.iDRIFourCC = DRM_FORMAT_ARGB1555,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_ARGB1555,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_RGBA,
+		.uiNumPlanes = 1,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_B5G5R5A1_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_ARGB1555,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+	},
+#endif
+#if defined(__DRI_IMAGE_FOURCC_MT21)
+	/* We patch this format into Mesa */
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_YVU8_420_2PLANE_PACK8_P,
+		.iDRIFourCC = __DRI_IMAGE_FOURCC_MT21,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_NONE,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_Y_UV,
+		.uiNumPlanes = 2,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+		.sPlanes[1] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8G8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_GR88,
+				.uiWidthShift = 1,
+				.uiHeightShift = 1
+		},
+	},
+#endif
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_YUV420_2PLANE,
+		.iDRIFourCC = DRM_FORMAT_NV12,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_NONE,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_Y_UV,
+		.uiNumPlanes = 2,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+		.sPlanes[1] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8G8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_GR88,
+				.uiWidthShift = 1,
+				.uiHeightShift = 1
+		},
+	},
+#if defined(__DRI_IMAGE_FOURCC_YVU420)
+	{
+		.eIMGPixelFormat = IMG_PIXFMT_YVU420_3PLANE,
+		.iDRIFourCC = __DRI_IMAGE_FOURCC_YVU420,
+		.iDRIFormat = __DRI_IMAGE_FORMAT_NONE,
+		.iDRIComponents = __DRI_IMAGE_COMPONENTS_Y_U_V,
+		.uiNumPlanes = 3,
+		.sPlanes[0] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+				.uiWidthShift = 0,
+				.uiHeightShift = 0
+		},
+		.sPlanes[1] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+				.uiWidthShift = 1,
+				.uiHeightShift = 1
+		},
+		.sPlanes[2] =
+		{
+				.eIMGPixelFormat = IMG_PIXFMT_R8_UNORM,
+				.iDRIFormat = __DRI_IMAGE_FORMAT_R8,
+				.uiWidthShift = 1,
+				.uiHeightShift = 1
+		},
+	},
+#endif
+};
+
+const __DRIconfig **
+PVRDRICreateConfigs(void)
+{
+	static const GLenum asBackBufferModes[]	= { __DRI_ATTRIB_SWAP_NONE, __DRI_ATTRIB_SWAP_UNDEFINED };
+	const uint8_t *puDepthBits = PVRDRIDepthBitsArray();
+	const uint8_t *puStencilBits = PVRDRIStencilBitsArray();
+	const uint8_t *puMSAASamples = PVRDRIMSAABitsArray();
+	const unsigned uNumBackBufferModes = ARRAY_SIZE(asBackBufferModes);
+	const unsigned uNumDepthStencilBits = PVRDRIDepthStencilBitArraySize();
+	const unsigned uNumMSAASamples = PVRDRIMSAABitArraySize();
+	__DRIconfig **ppsConfigs = NULL;
+	__DRIconfig **ppsNewConfigs;
+	unsigned i;
+
+	for (i = 0; i < ARRAY_SIZE(g_asMesaFormats); i++)
+	{
+		if (!PVRDRIMesaFormatSupported(g_asMesaFormats[i].uPVRDRI))
+			continue;
+
+		ppsNewConfigs = driCreateConfigs(g_asMesaFormats[i].eMesa,
+						 puDepthBits,
+						 puStencilBits,
+						 uNumDepthStencilBits, 
+						 asBackBufferModes,
+						 uNumBackBufferModes, 
+						 puMSAASamples,
+						 uNumMSAASamples,
+						 GL_FALSE,
+						 GL_FALSE,
+						 0,
+						 0);
+
+		ppsConfigs = driConcatConfigs(ppsConfigs, ppsNewConfigs);
+	}
+
+	if (ppsConfigs)
+	{
+		for (i = 0; ppsConfigs[i]; i++)
+		{
+			ppsConfigs[i]->modes.maxPbufferWidth =
+						PVRDRIMaxPBufferWidth();
+			ppsConfigs[i]->modes.maxPbufferHeight =
+						PVRDRIMaxPBufferHeight();
+
+			ppsConfigs[i]->modes.maxPbufferPixels =
+						PVRDRIMaxPBufferWidth() *
+						PVRDRIMaxPBufferHeight();
+		}
+	}
+
+	return (const __DRIconfig **)ppsConfigs;
 }
 
-int
-PVRDRIFormatToFourCC(int dri_format)
+const PVRDRIImageFormat *PVRDRIFormatToImageFormat(int iDRIFormat)
 {
-   switch (dri_format) {
-   case __DRI_IMAGE_FORMAT_RGB565:
-      return DRM_FORMAT_RGB565;
-   case __DRI_IMAGE_FORMAT_XRGB8888:
-      return DRM_FORMAT_XRGB8888;
-   case __DRI_IMAGE_FORMAT_ARGB8888:
-      return DRM_FORMAT_ARGB8888;
-   case __DRI_IMAGE_FORMAT_ABGR8888:
-      return DRM_FORMAT_ABGR8888;
-   case __DRI_IMAGE_FORMAT_XBGR8888:
-      return DRM_FORMAT_XBGR8888;
-   case __DRI_IMAGE_FORMAT_R8:
-      return DRM_FORMAT_R8;
-   case __DRI_IMAGE_FORMAT_GR88:
-      return DRM_FORMAT_GR88;
-   case __DRI_IMAGE_FORMAT_NONE:
-      return 0;
-   case __DRI_IMAGE_FORMAT_XRGB2101010:
-      return DRM_FORMAT_XRGB2101010;
-   case __DRI_IMAGE_FORMAT_ARGB2101010:
-      return DRM_FORMAT_ARGB2101010;
-   case __DRI_IMAGE_FORMAT_SARGB8:
-      return __DRI_IMAGE_FOURCC_SARGB8888;
-   case __DRI_IMAGE_FORMAT_ARGB1555:
-      return DRM_FORMAT_ARGB1555;
-   case __DRI_IMAGE_FORMAT_R16:
-      return DRM_FORMAT_R16;
-   case __DRI_IMAGE_FORMAT_GR1616:
-      return DRM_FORMAT_GR1616;
-   case __DRI_IMAGE_FORMAT_YUYV:
-      return DRM_FORMAT_YUYV;
-   case __DRI_IMAGE_FORMAT_XBGR2101010:
-      return DRM_FORMAT_XBGR2101010;
-   case __DRI_IMAGE_FORMAT_ABGR2101010:
-      return DRM_FORMAT_ABGR2101010;
-   case __DRI_IMAGE_FORMAT_SABGR8:
-      return __DRI_IMAGE_FOURCC_SABGR8888;
-   case __DRI_IMAGE_FORMAT_UYVY:
-      return DRM_FORMAT_UYVY;
-   case __DRI_IMAGE_FORMAT_ARGB4444:
-      return DRM_FORMAT_ARGB4444;
-   case __DRI_IMAGE_FORMAT_YVU444_PACK10_IMG:
-      return DRM_FORMAT_YVU444_PACK10_IMG;
-   case __DRI_IMAGE_FORMAT_BGR888:
-      return DRM_FORMAT_BGR888;
-   case __DRI_IMAGE_FORMAT_NV12:
-      return DRM_FORMAT_NV12;
-   case __DRI_IMAGE_FORMAT_NV21:
-      return DRM_FORMAT_NV21;
-   case __DRI_IMAGE_FORMAT_YU12:
-      return DRM_FORMAT_YUV420;
-   case __DRI_IMAGE_FORMAT_YV12:
-      return DRM_FORMAT_YVU420;
-   case __DRI_IMAGE_FORMAT_YVYU:
-      return DRM_FORMAT_YVYU;
-   case __DRI_IMAGE_FORMAT_VYUY:
-      return DRM_FORMAT_VYUY;
-   default:
-      __driUtilMessage("%s: Unknown format: %d", __func__, dri_format);
-      break;
-   }
+	unsigned i;
 
-   return 0;
+	for (i = 0; i < ARRAY_SIZE(g_asFormats); i++)
+	{
+		if (g_asFormats[i].iDRIFormat == iDRIFormat)
+		{
+			return &g_asFormats[i];
+		}
+	}
+
+	return NULL;
 }
 
-int
-PVRDRIFourCCToDRIFormat(int iFourCC)
+const PVRDRIImageFormat *PVRDRIFourCCToImageFormat(int iDRIFourCC)
 {
-   switch (iFourCC) {
-   case 0:
-      return __DRI_IMAGE_FORMAT_NONE;
-   case DRM_FORMAT_RGB565:
-      return __DRI_IMAGE_FORMAT_RGB565;
-   case DRM_FORMAT_XRGB8888:
-      return __DRI_IMAGE_FORMAT_XRGB8888;
-   case DRM_FORMAT_ARGB8888:
-      return __DRI_IMAGE_FORMAT_ARGB8888;
-   case DRM_FORMAT_ABGR8888:
-      return __DRI_IMAGE_FORMAT_ABGR8888;
-   case DRM_FORMAT_XBGR8888:
-      return __DRI_IMAGE_FORMAT_XBGR8888;
-   case DRM_FORMAT_R8:
-      return __DRI_IMAGE_FORMAT_R8;
-   case DRM_FORMAT_GR88:
-      return __DRI_IMAGE_FORMAT_GR88;
-   case DRM_FORMAT_XRGB2101010:
-      return __DRI_IMAGE_FORMAT_XRGB2101010;
-   case DRM_FORMAT_ARGB2101010:
-      return __DRI_IMAGE_FORMAT_ARGB2101010;
-   case __DRI_IMAGE_FOURCC_SARGB8888:
-      return __DRI_IMAGE_FORMAT_SARGB8;
-   case DRM_FORMAT_ARGB1555:
-      return __DRI_IMAGE_FORMAT_ARGB1555;
-   case DRM_FORMAT_R16:
-      return __DRI_IMAGE_FORMAT_R16;
-   case DRM_FORMAT_GR1616:
-      return __DRI_IMAGE_FORMAT_GR1616;
-   case DRM_FORMAT_YUYV:
-      return __DRI_IMAGE_FORMAT_YUYV;
-   case DRM_FORMAT_XBGR2101010:
-      return __DRI_IMAGE_FORMAT_XBGR2101010;
-   case DRM_FORMAT_ABGR2101010:
-      return __DRI_IMAGE_FORMAT_ABGR2101010;
-   case __DRI_IMAGE_FOURCC_SABGR8888:
-      return __DRI_IMAGE_FORMAT_SABGR8;
-   case DRM_FORMAT_UYVY:
-      return __DRI_IMAGE_FORMAT_UYVY;
-   case DRM_FORMAT_ARGB4444:
-      return __DRI_IMAGE_FORMAT_ARGB4444;
-   case DRM_FORMAT_YVU444_PACK10_IMG:
-      return __DRI_IMAGE_FORMAT_YVU444_PACK10_IMG;
-   case DRM_FORMAT_BGR888:
-      return __DRI_IMAGE_FORMAT_BGR888;
-   case DRM_FORMAT_NV12:
-      return __DRI_IMAGE_FORMAT_NV12;
-   case DRM_FORMAT_NV21:
-      return __DRI_IMAGE_FORMAT_NV21;
-   case DRM_FORMAT_YUV420:
-      return __DRI_IMAGE_FORMAT_YU12;
-   case DRM_FORMAT_YVU420:
-      return __DRI_IMAGE_FORMAT_YV12;
-   case DRM_FORMAT_YVYU:
-      return __DRI_IMAGE_FORMAT_YVYU;
-   case DRM_FORMAT_VYUY:
-      return __DRI_IMAGE_FORMAT_VYUY;
-   default:
-      __driUtilMessage("%s: Unknown format: %d", __func__, iFourCC);
-      break;
-   }
+	unsigned i;
 
-   return 0;
+	for (i = 0; i < ARRAY_SIZE(g_asFormats); i++)
+	{
+		if (g_asFormats[i].iDRIFourCC == iDRIFourCC)
+		{
+			return &g_asFormats[i];
+		}
+	}
+
+	return NULL;
+}
+
+const PVRDRIImageFormat *PVRDRIIMGPixelFormatToImageFormat(IMG_PIXFMT eIMGPixelFormat)
+{
+	unsigned i;
+
+	for (i = 0; i < ARRAY_SIZE(g_asFormats); i++)
+	{
+		if (g_asFormats[i].eIMGPixelFormat == eIMGPixelFormat)
+		{
+			return &g_asFormats[i];
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ * The EGL_EXT_image_dma_buf_import says that if a hint is unspecified then
+ * the implementation may guess based on the pixel format or may fallback
+ * to some default value. Furthermore, if a hint is unsupported then the
+ * implementation may use whichever settings it wants to achieve the closest
+ * match.
+ */
+IMG_YUV_COLORSPACE PVRDRIToIMGColourSpace(const PVRDRIImageFormat *psFormat,
+					  enum __DRIYUVColorSpace eDRIColourSpace,
+					  enum __DRISampleRange eDRISampleRange)
+{
+	switch (psFormat->iDRIComponents)
+	{
+		case __DRI_IMAGE_COMPONENTS_RGB:
+		case __DRI_IMAGE_COMPONENTS_RGBA:
+			return IMG_COLORSPACE_UNDEFINED;
+		case __DRI_IMAGE_COMPONENTS_Y_U_V:
+		case __DRI_IMAGE_COMPONENTS_Y_UV:
+		case __DRI_IMAGE_COMPONENTS_Y_XUXV:
+			break;
+		default:
+			errorMessage("Unrecognised DRI components (components = 0x%X)\n",
+				     psFormat->iDRIComponents);
+			assert(0);
+			return IMG_COLORSPACE_UNDEFINED;
+	}
+
+	switch (eDRIColourSpace)
+	{
+		case __DRI_YUV_COLOR_SPACE_UNDEFINED:
+		case __DRI_YUV_COLOR_SPACE_ITU_REC601:
+			switch (eDRISampleRange)
+			{
+				case __DRI_YUV_RANGE_UNDEFINED:
+				case __DRI_YUV_NARROW_RANGE:
+					return IMG_COLORSPACE_BT601_CONFORMANT_RANGE;
+				case __DRI_YUV_FULL_RANGE:
+					return IMG_COLORSPACE_BT601_FULL_RANGE;
+				default:
+					errorMessage("Unrecognised DRI sample range (sample range = 0x%X)\n",
+						     eDRISampleRange);
+					assert(0);
+					return IMG_COLORSPACE_UNDEFINED;
+			}
+		case __DRI_YUV_COLOR_SPACE_ITU_REC709:
+		case __DRI_YUV_COLOR_SPACE_ITU_REC2020:
+			switch (eDRISampleRange)
+			{
+				case __DRI_YUV_RANGE_UNDEFINED:
+				case __DRI_YUV_NARROW_RANGE:
+					return IMG_COLORSPACE_BT709_CONFORMANT_RANGE;
+				case __DRI_YUV_FULL_RANGE:
+					return IMG_COLORSPACE_BT709_FULL_RANGE;
+				default:
+					errorMessage("Unrecognised DRI sample range (sample range = 0x%X)\n",
+						     eDRISampleRange);
+					assert(0);
+					return IMG_COLORSPACE_UNDEFINED;
+			}
+		default:
+			errorMessage("Unrecognised DRI colour space (colour space = 0x%X)\n",
+				     eDRIColourSpace);
+			assert(0);
+			return IMG_COLORSPACE_UNDEFINED;
+	}
+}
+
+IMG_YUV_CHROMA_INTERP PVRDRIChromaSittingToIMGInterp(const PVRDRIImageFormat *psFormat,
+						     enum __DRIChromaSiting eChromaSitting)
+{
+	switch (psFormat->iDRIComponents)
+	{
+		case __DRI_IMAGE_COMPONENTS_RGB:
+		case __DRI_IMAGE_COMPONENTS_RGBA:
+			return IMG_CHROMA_INTERP_UNDEFINED;
+		case __DRI_IMAGE_COMPONENTS_Y_U_V:
+		case __DRI_IMAGE_COMPONENTS_Y_UV:
+		case __DRI_IMAGE_COMPONENTS_Y_XUXV:
+			break;
+		default:
+			errorMessage("Unrecognised DRI components (components = 0x%X)\n",
+				     psFormat->iDRIComponents);
+			assert(0);
+			return IMG_CHROMA_INTERP_UNDEFINED;
+	}
+
+	switch (eChromaSitting)
+	{
+		case __DRI_YUV_CHROMA_SITING_UNDEFINED:
+		case __DRI_YUV_CHROMA_SITING_0:
+			return IMG_CHROMA_INTERP_ZERO;
+		case __DRI_YUV_CHROMA_SITING_0_5:
+			return IMG_CHROMA_INTERP_HALF;
+		default:
+			errorMessage("Unrecognised DRI chroma sitting (chroma sitting = 0x%X)\n",
+				     eChromaSitting);
+			assert(0);
+			return IMG_CHROMA_INTERP_UNDEFINED;
+	}
 }

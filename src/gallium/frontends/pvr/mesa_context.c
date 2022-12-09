@@ -32,16 +32,20 @@
  */
 
 #include <stdlib.h>
+#include <dlfcn.h>
 #include <assert.h>
 
 #include "main/version.h"
 #include "main/errors.h"
 
-#include "dri_support.h"
 #include "dri_util.h"
-#include "glapi.h"
-#include "dispatch.h"
+#include "glapi/glapi.h"
+#include "main/dispatch.h"
 #include "pvrmesa.h"
+
+#include "dri_support.h"
+
+#include "compiler/glsl/glsl_parser_extras.h"
 
 /**
  * This is the default function we plug into all dispatch table slots This
@@ -85,8 +89,7 @@ pvrdri_get_dispatch_table_ptr(PVRDRIScreen *psPVRScreen, PVRDRIAPIType eAPI)
       return &psPVRScreen->psOGLES1Dispatch;
    case PVRDRI_API_GLES2:
       return &psPVRScreen->psOGLES2Dispatch;
-   case PVRDRI_API_GL_COMPAT:
-   case PVRDRI_API_GL_CORE:
+   case PVRDRI_API_GL:
       return &psPVRScreen->psOGLDispatch;
    default:
       return NULL;
@@ -129,20 +132,33 @@ pvrdri_free_dispatch_tables(PVRDRIScreen *psPVRScreen)
 
 static void
 pvrdri_add_mesa_dispatch(struct _glapi_table *psTable, PVRDRIAPIType eAPI,
-                         struct DRISUPScreen *psDRISUPScreen,
-                         unsigned int uIdx)
+			 PVRDRIScreenImpl *psScreenImpl,
+			 void *pvLibHandle,
+			 const char *psFunc)
 {
-   const char *asFunc[] = { NULL, NULL };
    int iOffset;
-   const char *psFunc;
+   const char *asFunc[] = {NULL, NULL};
    _glapi_proc pfFunc;
+   const char *error;
 
-   pfFunc = DRISUPGetAPIProcAddress(psDRISUPScreen, eAPI, uIdx);
-   if (pfFunc == NULL)
-      return;
-
-   psFunc = DRISUPGetAPIProcName(psDRISUPScreen, eAPI, uIdx);
-   assert(psFunc != NULL);
+   (void) dlerror();
+   pfFunc = dlsym(pvLibHandle, psFunc);
+   error = dlerror();
+   if (error != NULL)
+   {
+      pfFunc = PVRDRIEGLGetProcAddress(eAPI, psScreenImpl, psFunc);
+      if (pfFunc == NULL)
+      {
+#if 0
+         /*
+          * Not all extensions are supported, so there may
+          * be quite a lot of lookup failures.
+          */
+         _mesa_warning(NULL, "Couldn't get address of %s", psFunc);
+#endif
+         return;
+      }
+   }
 
    asFunc[0] = psFunc;
    iOffset = _glapi_add_dispatch(asFunc, "");
@@ -156,18 +172,26 @@ pvrdri_add_mesa_dispatch(struct _glapi_table *psTable, PVRDRIAPIType eAPI,
 
 static void
 pvrdri_set_mesa_dispatch(struct _glapi_table *psTable, PVRDRIAPIType eAPI,
-                         struct DRISUPScreen *psDRISUPScreen,
+                         PVRDRIScreenImpl *psScreenImpl,
+                         void *pvLibHandle,
                          unsigned int uNumFuncs)
 {
    for (unsigned int i = 0; i < uNumFuncs; i++)
-      pvrdri_add_mesa_dispatch(psTable, eAPI, psDRISUPScreen, i);
+   {
+      const char *psFunc = PVRDRIGetAPIFunc(eAPI, i);
+
+      assert(psFunc);
+
+      pvrdri_add_mesa_dispatch(psTable, eAPI, psScreenImpl, pvLibHandle, psFunc);
+   }
 }
 
 bool
 pvrdri_create_dispatch_table(PVRDRIScreen *psPVRScreen, PVRDRIAPIType eAPI)
 {
-   struct DRISUPScreen *psDRISUPScreen = psPVRScreen->psDRISUPScreen;
+   PVRDRIScreenImpl *psScreenImpl = psPVRScreen->psImpl;
    struct _glapi_table **ppsTable;
+   void *pvLibHandle;
    unsigned int uNumFuncs;
 
    ppsTable = pvrdri_get_dispatch_table_ptr(psPVRScreen, eAPI);
@@ -177,15 +201,16 @@ pvrdri_create_dispatch_table(PVRDRIScreen *psPVRScreen, PVRDRIAPIType eAPI)
    if (*ppsTable != NULL)
       return true;
 
-   uNumFuncs = DRISUPGetNumAPIProcs(psDRISUPScreen, eAPI);
-   if (!uNumFuncs)
+   pvLibHandle = PVRDRIEGLGetLibHandle(eAPI, psScreenImpl);;
+   uNumFuncs = PVRDRIGetNumAPIFuncs(eAPI);
+   if (!pvLibHandle || !uNumFuncs)
       return false;
 
    *ppsTable = pvrdri_alloc_dispatch_table();
    if (*ppsTable == NULL)
       return false;
 
-   pvrdri_set_mesa_dispatch(*ppsTable, eAPI, psDRISUPScreen, uNumFuncs);
+   pvrdri_set_mesa_dispatch(*ppsTable, eAPI, psScreenImpl, pvLibHandle, uNumFuncs);
 
    return true;
 }

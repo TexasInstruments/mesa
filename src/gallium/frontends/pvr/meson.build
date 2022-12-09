@@ -22,8 +22,8 @@
 
 files_libpvr = files(
   'mesa_context.c',
-  'pvrcb.c',
-  'pvrcompat.c',
+  'pvr_object_cache.c',
+  'pvrdrawable.c',
   'pvrdri.c',
   'pvrext.c',
   'pvrutil.c',
@@ -35,6 +35,8 @@ libpvr_dep = [dep_libdrm]
 if with_platform_tizen
   libpvr_dep += dep_dlog
 endif
+
+libpvr_dep += cc.find_library('pvr_dri_support', required : true)
 
 libpvr = static_library(
   'pvr',

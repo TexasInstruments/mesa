@@ -24,21 +24,71 @@
 
 #include <string.h>
 #include <assert.h>
+#include <pthread.h>
+#include <xf86drm.h>
 
-#include "util/u_atomic.h"
-#include "utils.h"
+#include "EGL/egl.h"
+#include "EGL/eglext.h"
 
-#include "dri_screen.h"
+#include "dri_util.h"
 
 #include "pvrdri.h"
 #include "pvrmesa.h"
 
 #define PVR_IMAGE_LOADER_VER_MIN 1
+#define PVR_DRI2_LOADER_VER_MIN 3
 
 struct PVRBuffer {
    __DRIbuffer sDRIBuffer;
-   struct DRISUPBuffer *psDRISUPBuffer;
+   PVRDRIBufferImpl *psImpl;
 };
+
+/* We need to know the current screen in order to lookup EGL images. */
+static __thread PVRDRIScreen *gpsPVRScreen;
+
+/*************************************************************************//*!
+ Global functions
+ *//**************************************************************************/
+
+void PVRDRIThreadSetCurrentScreen(PVRDRIScreen *psPVRScreen)
+{
+   gpsPVRScreen = psPVRScreen;
+}
+
+PVRDRIScreen* PVRDRIThreadGetCurrentScreen(void)
+{
+   return gpsPVRScreen;
+}
+
+/***********************************************************************************
+ Function Name : PVRDRIScreenLock
+ Inputs     : psPVRScreen - PVRDRI screen structure
+ Returns : Boolean
+ Description   : Lock screen mutex (can be called recursively)
+ ************************************************************************************/
+void PVRDRIScreenLock(PVRDRIScreen *psPVRScreen)
+{
+   int res = pthread_mutex_lock(&psPVRScreen->sMutex);
+   if (res != 0) {
+      errorMessage("%s: Failed to lock screen (%d)\n", __func__, res);
+      abort();
+   }
+}
+
+/***********************************************************************************
+ Function Name : PVRDRIScreenUnlock
+ Inputs     : psPVRScreen - PVRDRI screen structure
+ Returns : Boolean
+ Description   : Unlock screen mutex (can be called recursively)
+ ************************************************************************************/
+void PVRDRIScreenUnlock(PVRDRIScreen *psPVRScreen)
+{
+   int res = pthread_mutex_unlock(&psPVRScreen->sMutex);
+   if (res != 0) {
+      errorMessage("%s: Failed to unlock screen (%d)\n", __func__, res);
+      abort();
+   }
+}
 
 /*************************************************************************//*!
  Local functions
@@ -58,36 +108,323 @@ PVRLoaderIsSupported(__DRIscreen *psDRIScreen)
                           __func__);
          return false;
       }
+   } else if (psDRIScreen->dri2.loader) {
+      if (psDRIScreen->dri2.loader->base.version < PVR_DRI2_LOADER_VER_MIN)
+      {
+         __driUtilMessage("%s: DRI2 loader extension version %d but need %d",
+               __func__,
+               psDRIScreen->dri2.loader->base.version,
+               PVR_DRI2_LOADER_VER_MIN);
+         return false;
+      }
+      else if (!psDRIScreen->dri2.loader->getBuffersWithFormat)
+      {
+         __driUtilMessage("%s: DRI2 loader extension missing support for getBuffersWithFormat",
+               __func__);
+         return false;
+      }
    } else {
-      __driUtilMessage("%s: Image loader extension required", __func__);
+      __driUtilMessage("%s: Missing required loader extension (need "
+            "either the image or DRI2 loader extension)",
+            __func__);
       return false;
    }
 
    return true;
 }
 
-static inline struct DRISUPContext *
+static bool PVRMutexInit(pthread_mutex_t *psMutex, int iType)
+{
+   pthread_mutexattr_t sMutexAttr;
+   int res;
+
+   res = pthread_mutexattr_init(&sMutexAttr);
+   if (res != 0)
+         {
+      __driUtilMessage("%s: pthread_mutexattr_init failed (%d)",
+            __func__,
+            res);
+      return false;
+   }
+
+   res = pthread_mutexattr_settype(&sMutexAttr, iType);
+   if (res != 0)
+         {
+      __driUtilMessage("%s: pthread_mutexattr_settype failed (%d)",
+            __func__,
+            res);
+      goto ErrorMutexAttrDestroy;
+   }
+
+   res = pthread_mutex_init(psMutex, &sMutexAttr);
+   if (res != 0)
+         {
+      __driUtilMessage("%s: pthread_mutex_init failed (%d)",
+            __func__,
+            res);
+      goto ErrorMutexAttrDestroy;
+   }
+
+   (void) pthread_mutexattr_destroy(&sMutexAttr);
+
+   return true;
+
+   ErrorMutexAttrDestroy:
+   (void) pthread_mutexattr_destroy(&sMutexAttr);
+
+   return false;
+}
+
+static void PVRMutexDeinit(pthread_mutex_t *psMutex)
+{
+   int res;
+
+   res = pthread_mutex_destroy(psMutex);
+   if (res != 0)
+         {
+      __driUtilMessage("%s: pthread_mutex_destroy failed (%d)",
+            __func__,
+            res);
+   }
+}
+
+static inline bool
+PVRDRIFlushBuffers(PVRDRIContext *psPVRContext,
+      PVRDRIDrawable *psPVRDrawable,
+      bool bFlushAllSurfaces,
+      bool bSwapBuffers,
+      bool bWaitForHW)
+{
+   return PVRDRIEGLFlushBuffers(psPVRContext->eAPI,
+         psPVRContext->psPVRScreen->psImpl,
+         psPVRContext->psImpl,
+         psPVRDrawable ? psPVRDrawable->psImpl : NULL,
+         bFlushAllSurfaces,
+         bSwapBuffers,
+         bWaitForHW);
+}
+
+static inline bool
+PVRDRIFlushBuffersAndWait(PVRDRIContext *psPVRContext)
+{
+   return PVRDRIFlushBuffers(psPVRContext, NULL, true, false, true);
+}
+
+static inline bool
+PVRDRIFlushContextForSwapNoWait(PVRDRIContext *psPVRContext,
+      PVRDRIDrawable *psPVRDrawable)
+{
+   return PVRDRIFlushBuffers(psPVRContext, psPVRDrawable, false, true, false);
+}
+
+static inline bool
+PVRDRIFlushBuffersForSwapAndWait(PVRDRIContext *psPVRContext)
+{
+   return PVRDRIFlushBuffers(psPVRContext, NULL, true, true, true);
+}
+
+static void
+PVRDRIFlushDrawable(PVRDRIDrawable *psPVRDrawable,
+bool bSwapBuffers,
+      PVRDRIContext *psPVRSwapContext)
+{
+   PVRQElem *psQElem = psPVRDrawable->sPVRContextHead.pvForw;
+
+   while (psQElem != &psPVRDrawable->sPVRContextHead)
+   {
+      PVRDRIContext *psPVRContext = PVRQ_CONTAINER_OF(psQElem, PVRDRIContext, sQElem);
+
+      if (bSwapBuffers && (psPVRContext == psPVRSwapContext || psPVRSwapContext == NULL))
+            {
+         (void) PVRDRIFlushBuffersForSwapAndWait(psPVRContext);
+      }
+      else
+      {
+         (void) PVRDRIFlushBuffersAndWait(psPVRContext);
+      }
+
+      psQElem = psPVRContext->sQElem.pvForw;
+   }
+}
+
+static void
+PVRDRIFlushDrawableForSwapNoWait(PVRDRIDrawable *psPVRDrawable)
+{
+   PVRQElem *psQElem = psPVRDrawable->sPVRContextHead.pvForw;
+
+   while (psQElem != &psPVRDrawable->sPVRContextHead)
+   {
+      PVRDRIContext *psPVRContext = PVRQ_CONTAINER_OF(psQElem, PVRDRIContext, sQElem);
+
+      (void) PVRDRIFlushContextForSwapNoWait(psPVRContext, psPVRDrawable);
+
+      psQElem = psPVRContext->sQElem.pvForw;
+   }
+}
+
+static bool
+PVRDRICacheFlushSurfaces(bool bSwapBuffers,
+      PVRDRIContext *psPVRSwapContext,
+      PVRDRIDrawable *psPVRDrawable)
+{
+   if (PVRQIsEmpty(&psPVRDrawable->sCacheFlushHead))
+         {
+      return false;
+   }
+
+   PVRDRIFlushDrawable(psPVRDrawable, bSwapBuffers, psPVRSwapContext);
+
+   while (!PVRQIsEmpty(&psPVRDrawable->sCacheFlushHead))
+   {
+      PVRDRIBuffer *psPVRDRIBuffer = PVRQ_CONTAINER_OF(psPVRDrawable->sCacheFlushHead.pvForw,
+            PVRDRIBuffer,
+            sCacheFlushElem);
+
+      PVRQDequeue(&psPVRDRIBuffer->sCacheFlushElem);
+
+      switch (psPVRDRIBuffer->eBackingType)
+      {
+      case PVRDRI_BUFFER_BACKING_DRI2:
+         PVRDRIBufferDestroy(psPVRDRIBuffer->uBacking.sDRI2.psBuffer);
+         break;
+      case PVRDRI_BUFFER_BACKING_IMAGE:
+         PVRDRIUnrefImage(psPVRDRIBuffer->uBacking.sImage.psImage);
+         break;
+      default:
+         assert(0);
+         continue;
+      }
+
+      free(psPVRDRIBuffer);
+   }
+
+   return true;
+}
+
+bool
+PVRDRIFlushBuffersForSwap(PVRDRIContext *psPVRContext, PVRDRIDrawable *psPVRDrawable)
+{
+   if (PVRDRICacheFlushSurfaces(true, psPVRContext, psPVRDrawable))
+      return true;
+
+   if (psPVRContext != NULL)
+      return PVRDRIFlushContextForSwapNoWait(psPVRContext, psPVRDrawable);
+
+   PVRDRIFlushDrawableForSwapNoWait(psPVRDrawable);
+
+   return true;
+}
+
+static bool
+PVRDRIFlushBuffersGC(PVRDRIContext *psPVRContext)
+{
+   if (psPVRContext->psPVRDrawable != NULL)
+   {
+      if (PVRDRICacheFlushSurfaces(false, NULL, psPVRContext->psPVRDrawable))
+            {
+         return true;
+      }
+   }
+
+   return PVRDRIFlushBuffersAndWait(psPVRContext);
+}
+
+static void PVRDRIDisplayFrontBuffer(PVRDRIDrawable *psPVRDrawable)
+{
+   if (!psPVRDrawable->bDoubleBuffered)
+   {
+      PVRDRIScreen *psPVRScreen = psPVRDrawable->psPVRScreen;
+      __DRIscreen *psDRIScreen = psPVRScreen->psDRIScreen;
+
+      /* Only double buffered drawables should need flushing */
+      assert(PVRQIsEmpty(&psPVRDrawable->sCacheFlushHead));
+
+      if (psDRIScreen->image.loader && psDRIScreen->image.loader->flushFrontBuffer)
+            {
+         psDRIScreen->image.loader->flushFrontBuffer(psPVRDrawable->psDRIDrawable,
+               psPVRDrawable->psDRIDrawable->loaderPrivate);
+      }
+      else if (psDRIScreen->dri2.loader && psDRIScreen->dri2.loader->flushFrontBuffer)
+            {
+         psDRIScreen->dri2.loader->flushFrontBuffer(psPVRDrawable->psDRIDrawable,
+               psPVRDrawable->psDRIDrawable->loaderPrivate);
+      }
+   }
+}
+
+static void
+PVRContextUnbind(PVRDRIContext *psPVRContext, bool bMakeUnCurrent, bool bMarkSurfaceInvalid)
+{
+   if (bMakeUnCurrent || psPVRContext->psPVRDrawable != NULL)
+   {
+      (void) PVRDRIFlushBuffersGC(psPVRContext);
+   }
+
+   if (bMakeUnCurrent)
+   {
+      PVRDRIMakeUnCurrentGC(psPVRContext->eAPI,
+            psPVRContext->psPVRScreen->psImpl);
+   }
+
+   if (psPVRContext->psPVRDrawable != NULL)
+   {
+      if (bMarkSurfaceInvalid)
+      {
+         PVRDRIEGLMarkRendersurfaceInvalid(psPVRContext->eAPI,
+               psPVRContext->psPVRScreen->psImpl,
+               psPVRContext->psImpl);
+      }
+
+      psPVRContext->psPVRDrawable = NULL;
+   }
+
+   PVRQDequeue(&psPVRContext->sQElem);
+}
+
+static inline PVRDRIContextImpl*
 getSharedContextImpl(void *pvSharedContextPrivate)
 {
    if (pvSharedContextPrivate == NULL)
       return NULL;
 
-   return ((PVRDRIContext *) pvSharedContextPrivate)->psDRISUPContext;
+   return ((PVRDRIContext*) pvSharedContextPrivate)->psImpl;
+}
+
+static void
+PVRDRIConfigFromMesa(PVRDRIConfigInfo *psConfigInfo, const struct gl_config *psGLMode)
+{
+   memset(psConfigInfo, 0, sizeof(*psConfigInfo));
+
+   if (psGLMode)
+   {
+      psConfigInfo->samples = psGLMode->samples;
+      psConfigInfo->redBits = psGLMode->redBits;
+      psConfigInfo->greenBits = psGLMode->greenBits;
+      psConfigInfo->blueBits = psGLMode->blueBits;
+      psConfigInfo->alphaBits = psGLMode->alphaBits;
+      psConfigInfo->rgbBits = psGLMode->rgbBits;
+      psConfigInfo->depthBits = psGLMode->depthBits;
+      psConfigInfo->stencilBits = psGLMode->stencilBits;
+      psConfigInfo->doubleBufferMode = psGLMode->doubleBufferMode;
+
+      psConfigInfo->sampleBuffers = psGLMode->samples > 0 ? 1 : 0;
+      psConfigInfo->bindToTextureRgb = GL_TRUE;
+      psConfigInfo->bindToTextureRgba = GL_TRUE;
+   }
 }
 
 static void
 PVRDRIScreenAddReference(PVRDRIScreen *psPVRScreen)
 {
-   int iRefCount = p_atomic_inc_return(&psPVRScreen->iRefCount);
-
+   int iRefCount = __sync_fetch_and_add(&psPVRScreen->iRefCount, 1);
    (void) iRefCount;
-   assert(iRefCount > 1);
+   assert(iRefCount > 0);
 }
 
 static void
 PVRDRIScreenRemoveReference(PVRDRIScreen *psPVRScreen)
 {
-   int iRefCount = p_atomic_dec_return(&psPVRScreen->iRefCount);
+   int iRefCount = __sync_sub_and_fetch(&psPVRScreen->iRefCount, 1);
 
    assert(iRefCount >= 0);
 
@@ -95,38 +432,43 @@ PVRDRIScreenRemoveReference(PVRDRIScreen *psPVRScreen)
       return;
 
    pvrdri_free_dispatch_tables(psPVRScreen);
-   DRISUPDestroyScreen(psPVRScreen->psDRISUPScreen);
-   PVRDRICompatDeinit();
+
+   (void) PVRDRIEGLFreeResources(psPVRScreen->psImpl);
+
+   PVRDRIDestroyFencesImpl(psPVRScreen->psImpl);
+
+   PVRDRIDestroyScreenImpl(psPVRScreen->psImpl);
+   PVRMutexDeinit(&psPVRScreen->sMutex);
+
    free(psPVRScreen);
 }
 
-void
-PVRDRIDrawableAddReference(PVRDRIDrawable *psPVRDrawable)
+static void
+PVRDrawableUnbindContexts(PVRDRIDrawable *psPVRDrawable)
 {
-   int iRefCount = p_atomic_inc_return(&psPVRDrawable->iRefCount);
+   PVRQElem *psQElem = psPVRDrawable->sPVRContextHead.pvForw;
 
-   (void) iRefCount;
-   assert(iRefCount > 1);
-}
+   while (psQElem != &psPVRDrawable->sPVRContextHead)
+   {
+      PVRDRIContext *psPVRContext = PVRQ_CONTAINER_OF(psQElem,
+            PVRDRIContext,
+            sQElem);
 
-void
-PVRDRIDrawableRemoveReference(PVRDRIDrawable *psPVRDrawable)
-{
-   int iRefCount = p_atomic_dec_return(&psPVRDrawable->iRefCount);
+      /* Get the next element in the list now, as the list will be modified */
+      psQElem = psPVRContext->sQElem.pvForw;
 
-   assert(iRefCount >= 0);
-
-   if (iRefCount != 0)
-      return;
-
-   DRISUPDestroyDrawable(psPVRDrawable->psDRISUPDrawable);
-
-#if defined(DEBUG)
-   p_atomic_dec(&psPVRDrawable->psPVRScreen->iDrawableAlloc);
-#endif
-
-   PVRDRIScreenRemoveReference(psPVRDrawable->psPVRScreen);
-   free(psPVRDrawable);
+      /* Draw surface? */
+      if (psPVRContext->psPVRDrawable == psPVRDrawable)
+            {
+         PVRContextUnbind(psPVRContext, false, true);
+      }
+      /* Pixmap? */
+      else
+      {
+         (void) PVRDRIFlushBuffersGC(psPVRContext);
+         PVRQDequeue(&psPVRContext->sQElem);
+      }
+   }
 }
 
 static void
@@ -176,70 +518,87 @@ PVRDRIInitScreen(__DRIscreen *psDRIScreen)
 {
    PVRDRIScreen *psPVRScreen;
    const __DRIconfig **ppsConfigs;
-   int iMaxGLES1Version, iMaxGLES2Version;
-   const struct PVRDRICallbacksV2 sDRICallbacksV2 = {
-      /* Version 0 callbacks */
-      .v0.RegisterSupportInterface = MODSUPRegisterSupportInterfaceV2,
-      .v0.GetBuffers = MODSUPGetBuffers,
-      .v0.CreateConfigs = MODSUPCreateConfigs,
-      .v0.ConcatConfigs = MODSUPConcatConfigs,
-      .v0.ConfigQuery = MODSUPConfigQuery,
-      .v0.LookupEGLImage = MODSUPLookupEGLImage,
-      .v0.GetCapability = MODSUPGetCapability,
-      /* Version 1 callbacks */
-      .v1.FlushFrontBuffer = MODSUPFlushFrontBuffer,
-      /* Version 2 callbacks */
-      .v2.GetDisplayFD = MODSUPGetDisplayFD,
-      /* Version 3 callbacks */
-      .v3.DrawableGetReferenceHandle = MODSUPDrawableGetReferenceHandle,
-      .v3.DrawableAddReference = MODSUPDrawableAddReference,
-      .v3.DrawableRemoveReference = MODSUPDrawableRemoveReference,
+   PVRDRICallbacks sDRICallbacks = {
+         .DrawableRecreate = PVRDRIDrawableRecreate,
+         .DrawableGetParameters = PVRDRIDrawableGetParameters,
+         .ImageGetSharedType = PVRDRIImageGetSharedType,
+         .ImageGetSharedBuffer = PVRDRIImageGetSharedBuffer,
+         .ImageGetSharedEGLImage = PVRDRIImageGetSharedEGLImage,
+         .ImageGetEGLImage = PVRDRIImageGetEGLImage,
+         .ScreenGetDRIImage = PVRDRIScreenGetDRIImage,
+         .RefImage = PVRDRIRefImage,
+         .UnrefImage = PVRDRIUnrefImage,
    };
 
    if (!PVRLoaderIsSupported(psDRIScreen))
       return NULL;
 
-   if (!PVRDRICompatInit(&sDRICallbacksV2, 3, 0))
-      return NULL;
+   PVRDRIRegisterCallbacks(&sDRICallbacks);
 
    psPVRScreen = calloc(1, sizeof(*psPVRScreen));
    if (psPVRScreen == NULL) {
       __driUtilMessage("%s: Couldn't allocate PVRDRIScreen", __func__);
-      goto ErrorCompatDeinit;
+      return NULL;
    }
 
    psDRIScreen->driverPrivate = psPVRScreen;
    psPVRScreen->psDRIScreen = psDRIScreen;
-   psPVRScreen->iRefCount = 1;
 
-   psPVRScreen->psDRISUPScreen =
-      DRISUPCreateScreen(psDRIScreen, psDRIScreen->fd,
-                         psDRIScreen->dri2.useInvalidate != NULL,
-                         psDRIScreen->loaderPrivate,
-                         &ppsConfigs, &iMaxGLES1Version, &iMaxGLES2Version);
-   if (!psPVRScreen->psDRISUPScreen)
+   /*
+    * KEGLGetDrawableParameters could be called with the mutex either
+    * locked or unlocked, hence the use of a recursive mutex.
+    */
+   if (!PVRMutexInit(&psPVRScreen->sMutex, PTHREAD_MUTEX_RECURSIVE)) {
+      __driUtilMessage("%s: Screen mutex initialisation failed",
+            __func__);
       goto ErrorScreenFree;
+   }
 
-   psDRIScreen->max_gl_es1_version = iMaxGLES1Version;
-   psDRIScreen->max_gl_es2_version = iMaxGLES2Version;
-
-   psDRIScreen->max_gl_compat_version =
-      DRISUPGetAPIVersion(psPVRScreen->psDRISUPScreen, PVRDRI_API_GL_COMPAT);
-   psDRIScreen->max_gl_core_version =
-      DRISUPGetAPIVersion(psPVRScreen->psDRISUPScreen, PVRDRI_API_GL_CORE);
+   psPVRScreen->iRefCount = 1;
+   psPVRScreen->bUseInvalidate = (psDRIScreen->dri2.useInvalidate != NULL);
 
    psDRIScreen->extensions = PVRDRIScreenExtensions();
+
+   psPVRScreen->psImpl = PVRDRICreateScreenImpl(psDRIScreen->fd);
+   if (psPVRScreen->psImpl == NULL)
+      goto ErrorScreenMutexDeinit;
+
+   /*
+    * OpenGL doesn't support concurrent EGL displays so only advertise
+    * OpenGL support for the first display.
+    */
+   if (PVRDRIIsFirstScreen(psPVRScreen->psImpl)) {
+      psDRIScreen->max_gl_compat_version =
+         PVRDRIAPIVersion(PVRDRI_API_GL, PVRDRI_API_SUB_GL_COMPAT, psPVRScreen->psImpl);
+      psDRIScreen->max_gl_core_version =
+         PVRDRIAPIVersion(PVRDRI_API_GL, PVRDRI_API_SUB_GL_CORE, psPVRScreen->psImpl);
+   }
+
+   psDRIScreen->max_gl_es1_version =
+      PVRDRIAPIVersion(PVRDRI_API_GLES1, PVRDRI_API_SUB_NONE, psPVRScreen->psImpl);
+
+   psDRIScreen->max_gl_es2_version =
+      PVRDRIAPIVersion(PVRDRI_API_GLES2, PVRDRI_API_SUB_NONE, psPVRScreen->psImpl);
+
+   ppsConfigs = PVRDRICreateConfigs();
+   if (ppsConfigs == NULL)
+   {
+      __driUtilMessage("%s: No framebuffer configs", __func__);
+      goto ErrorScreenImplDeinit;
+   }
 
    PVRScreenPrintExtensions(psDRIScreen);
 
    return ppsConfigs;
 
-ErrorScreenFree:
-   psDRIScreen->driverPrivate = NULL;
-   free(psPVRScreen);
+ErrorScreenImplDeinit:
+   PVRDRIDestroyScreenImpl(psPVRScreen->psImpl);
 
-ErrorCompatDeinit:
-   PVRDRICompatDeinit();
+ErrorScreenMutexDeinit:
+   PVRMutexDeinit(&psPVRScreen->sMutex);
+
+ErrorScreenFree:
+   free(psPVRScreen);
 
    return NULL;
 }
@@ -267,11 +626,11 @@ PVRDRIDestroyScreen(__DRIscreen *psDRIScreen)
    PVRDRIScreenRemoveReference(psPVRScreen);
 }
 
-static int
+static EGLint
 PVRDRIScreenSupportedAPIs(PVRDRIScreen *psPVRScreen)
 {
    unsigned int api_mask = psPVRScreen->psDRIScreen->api_mask;
-   int supported = 0;
+   EGLint supported = 0;
 
    if ((api_mask & (1 << __DRI_API_GLES)) != 0)
       supported |= PVRDRI_API_BIT_GLES;
@@ -300,19 +659,10 @@ PVRDRICreateContext(gl_api eMesaAPI, const struct gl_config *psGLMode,
    __DRIscreen *psDRIScreen = psDRIContext->driScreenPriv;
    PVRDRIScreen *psPVRScreen = psDRIScreen->driverPrivate;
    PVRDRIContext *psPVRContext;
-   struct DRISUPContext *psDRISUPContext;
-   struct DRISUPContext *psDRISUPSharedContext;
-   struct PVRDRIContextConfig sCtxConfig;
-   PVRDRIAPIType eAPI;
-
-   psDRISUPSharedContext = getSharedContextImpl(pvSharedContextPrivate);
-
-   sCtxConfig.uMajorVersion = psCtxConfig->major_version;
-   sCtxConfig.uMinorVersion = psCtxConfig->minor_version;
-   sCtxConfig.uFlags = psCtxConfig->flags;
-   sCtxConfig.iResetStrategy = __DRI_CTX_RESET_NO_NOTIFICATION;
-   sCtxConfig.uPriority = __DRI_CTX_PRIORITY_MEDIUM;
-   sCtxConfig.iReleaseBehavior = __DRI_CTX_RELEASE_BEHAVIOR_FLUSH;
+   unsigned uPriority;
+   PVRDRIAPISubType eAPISub = PVRDRI_API_SUB_NONE;
+   PVRDRIConfigInfo sConfigInfo;
+   bool bResult;
 
    psPVRContext = calloc(1, sizeof(*psPVRContext));
    if (psPVRContext == NULL) {
@@ -324,74 +674,76 @@ PVRDRICreateContext(gl_api eMesaAPI, const struct gl_config *psGLMode,
    psPVRContext->psDRIContext = psDRIContext;
    psPVRContext->psPVRScreen = psPVRScreen;
 
-   if (psGLMode)
-      psPVRContext->sConfig.sGLMode = *psGLMode;
+#if defined(__DRI_PRIORITY)
+	uPriority = psDRIContext->priority;
+#else
+   uPriority = PVRDRI_CONTEXT_PRIORITY_MEDIUM;
+#endif
 
    switch (eMesaAPI) {
-   case API_OPENGLES:
-      eAPI = PVRDRI_API_GLES1;
-      break;
-   case API_OPENGLES2:
-      eAPI = PVRDRI_API_GLES2;
-      break;
    case API_OPENGL_COMPAT:
-      eAPI = PVRDRI_API_GL_COMPAT;
+      psPVRContext->eAPI = PVRDRI_API_GL;
+      eAPISub = PVRDRI_API_SUB_GL_COMPAT;
       break;
    case API_OPENGL_CORE:
-      eAPI = PVRDRI_API_GL_CORE;
+      psPVRContext->eAPI = PVRDRI_API_GL;
+      eAPISub = PVRDRI_API_SUB_GL_CORE;
+      break;
+   case API_OPENGLES:
+      psPVRContext->eAPI = PVRDRI_API_GLES1;
+      break;
+   case API_OPENGLES2:
+      psPVRContext->eAPI = PVRDRI_API_GLES2;
       break;
    default:
       __driUtilMessage("%s: Unsupported API: %d",
                        __func__, (int) eMesaAPI);
-      *puError = __DRI_CTX_ERROR_BAD_API;
       goto ErrorContextFree;
    }
-   psPVRContext->eAPI = eAPI;
 
-   if ((psCtxConfig->attribute_mask &
-        __DRIVER_CONTEXT_ATTRIB_RESET_STRATEGY) != 0) {
-      sCtxConfig.iResetStrategy = psCtxConfig->reset_strategy;
-   }
+   PVRDRIConfigFromMesa(&sConfigInfo, psGLMode);
 
-   if ((psCtxConfig->attribute_mask &
-        __DRIVER_CONTEXT_ATTRIB_RELEASE_BEHAVIOR) != 0) {
-      sCtxConfig.iReleaseBehavior = psCtxConfig->release_behavior;
-   }
-
-   if ((psCtxConfig->attribute_mask &
-        __DRIVER_CONTEXT_ATTRIB_PRIORITY) != 0) {
-      sCtxConfig.uPriority = psCtxConfig->priority;
-   }
-
-   *puError = DRISUPCreateContext(eAPI, &psPVRContext->sConfig, &sCtxConfig,
-                                  psDRIContext, psDRISUPSharedContext,
-                                  psPVRScreen->psDRISUPScreen,
-                                  &psDRISUPContext);
+   *puError = PVRDRICreateContextImpl(&psPVRContext->psImpl,
+         psPVRContext->eAPI,
+         eAPISub,
+         psPVRScreen->psImpl,
+         &sConfigInfo,
+         psCtxConfig->major_version,
+         psCtxConfig->minor_version,
+         psCtxConfig->flags,
+         false, // FIXME
+         uPriority,
+         getSharedContextImpl(pvSharedContextPrivate));
    if (*puError != __DRI_CTX_ERROR_SUCCESS)
       goto ErrorContextFree;
 
-   psPVRContext->psDRISUPContext = psDRISUPContext;
+   /*
+    * The dispatch table must be created after the context, because
+    * PVRDRIContextCreate loads the API library, and we need the
+    * library handle to populate the dispatch table.
+    */
+   PVRDRIScreenLock(psPVRScreen);
+   bResult = pvrdri_create_dispatch_table(psPVRScreen, psPVRContext->eAPI);
+   PVRDRIScreenUnlock(psPVRScreen);
 
-   if (!pvrdri_create_dispatch_table(psPVRScreen, eAPI)) {
+   if (!bResult) {
       __driUtilMessage("%s: Couldn't create dispatch table", __func__);
       *puError = __DRI_CTX_ERROR_BAD_API;
       goto ErrorContextDestroy;
    }
-#if defined(DEBUG)
-   p_atomic_inc(&psPVRScreen->iContextAlloc);
-#endif
 
-   psDRIContext->driverPrivate = (void *) psPVRContext;
+   psDRIContext->driverPrivate = (void*) psPVRContext;
    PVRDRIScreenAddReference(psPVRScreen);
 
    *puError = __DRI_CTX_ERROR_SUCCESS;
 
    return GL_TRUE;
 
-ErrorContextDestroy:
-   DRISUPDestroyContext(psPVRContext->psDRISUPContext);
-
-ErrorContextFree:
+   ErrorContextDestroy:
+   PVRDRIDestroyContextImpl(psPVRContext->psImpl,
+         psPVRContext->eAPI,
+         psPVRScreen->psImpl);
+   ErrorContextFree:
    free(psPVRContext);
 
    return GL_FALSE;
@@ -403,14 +755,59 @@ PVRDRIDestroyContext(__DRIcontext *psDRIContext)
    PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
    PVRDRIScreen *psPVRScreen = psPVRContext->psPVRScreen;
 
-   DRISUPDestroyContext(psPVRContext->psDRISUPContext);
+   PVRDRIScreenLock(psPVRScreen);
 
-#if defined(DEBUG)
-   p_atomic_dec(&psPVRScreen->iContextAlloc);
-#endif
+   PVRContextUnbind(psPVRContext, false, false);
+
+   PVRDRIDestroyContextImpl(psPVRContext->psImpl,
+         psPVRContext->eAPI,
+         psPVRScreen->psImpl);
+
+   free(psPVRContext);
+
+   PVRDRIScreenUnlock(psPVRScreen);
 
    PVRDRIScreenRemoveReference(psPVRScreen);
-   free(psPVRContext);
+}
+
+static IMG_PIXFMT PVRDRIGetPixelFormat(const struct gl_config *psGLMode)
+{
+   switch (psGLMode->rgbBits)
+   {
+   case 32:
+   case 24:
+      if (psGLMode->redMask == 0x00FF0000 &&
+          psGLMode->greenMask == 0x0000FF00 &&
+          psGLMode->blueMask == 0x000000FF) {
+         if (psGLMode->alphaMask == 0xFF000000)
+            return IMG_PIXFMT_B8G8R8A8_UNORM;
+         else if (psGLMode->alphaMask == 0)
+            return IMG_PIXFMT_B8G8R8X8_UNORM;
+      }
+
+      if (psGLMode->redMask == 0x000000FF &&
+          psGLMode->greenMask == 0x0000FF00 &&
+          psGLMode->blueMask == 0x00FF0000) {
+         if (psGLMode->alphaMask == 0xFF000000)
+            return IMG_PIXFMT_R8G8B8A8_UNORM;
+         else if (psGLMode->alphaMask == 0)
+            return IMG_PIXFMT_R8G8B8X8_UNORM;
+      }
+
+      __driUtilMessage("%s: Unsupported buffer format", __func__);
+      return IMG_PIXFMT_UNKNOWN;
+
+   case 16:
+      if (psGLMode->redMask == 0xF800 &&
+          psGLMode->greenMask == 0x07E0 &&
+          psGLMode->blueMask == 0x001F) {
+         return IMG_PIXFMT_B5G6R5_UNORM;
+      }
+
+   default:
+      errorMessage("%s: Unsupported screen format\n", __func__);
+      return IMG_PIXFMT_UNKNOWN;
+   }
 }
 
 static GLboolean
@@ -419,6 +816,9 @@ PVRDRICreateBuffer(__DRIscreen *psDRIScreen, __DRIdrawable *psDRIDrawable,
 {
    PVRDRIScreen *psPVRScreen = psDRIScreen->driverPrivate;
    PVRDRIDrawable *psPVRDrawable = NULL;
+   PVRDRIDrawableImpl *psDrawableImpl = NULL;
+   EGLint supportedAPIs = PVRDRIScreenSupportedAPIs(psPVRScreen);
+   PVRDRIConfigInfo sConfigInfo;
 
    /* No known callers ever set this to true */
    if (bIsPixmap)
@@ -435,33 +835,52 @@ PVRDRICreateBuffer(__DRIscreen *psDRIScreen, __DRIdrawable *psDRIDrawable,
       goto ErrorDrawableFree;
    }
 
-   psDRIDrawable->driverPrivate = (void *) psPVRDrawable;
-   psPVRDrawable->iRefCount = 1;
-   psPVRDrawable->psDRIDrawable = psDRIDrawable;
-   psPVRDrawable->psPVRScreen = psPVRScreen;
-   psPVRDrawable->sConfig.sGLMode = *psGLMode;
-   psPVRDrawable->sConfig.iSupportedAPIs =
-      PVRDRIScreenSupportedAPIs(psPVRScreen);
-
-   psPVRDrawable->psDRISUPDrawable =
-      DRISUPCreateDrawable(psDRIDrawable, psPVRScreen->psDRISUPScreen,
-                           psDRIDrawable->loaderPrivate,
-                           &psPVRDrawable->sConfig);
-   if (!psPVRDrawable->psDRISUPDrawable) {
-      __driUtilMessage("%s: Couldn't create DRI Support drawable",
-                       __func__);
+   psDrawableImpl = PVRDRICreateDrawableImpl(psPVRDrawable);
+   if (!psDrawableImpl) {
+      __driUtilMessage("%s: Couldn't allocate PVR drawable", __func__);
       goto ErrorDrawableFree;
    }
 
+   psPVRDrawable->psImpl = psDrawableImpl;
+
+   psDRIDrawable->driverPrivate = (void*) psPVRDrawable;
+
+   INITIALISE_PVRQ_HEAD(&psPVRDrawable->sPVRContextHead);
+   INITIALISE_PVRQ_HEAD(&psPVRDrawable->sCacheFlushHead);
+
+   psPVRDrawable->psDRIDrawable = psDRIDrawable;
+   psPVRDrawable->psPVRScreen = psPVRScreen;
+   psPVRDrawable->bDoubleBuffered = psGLMode->doubleBufferMode;
+
+   psPVRDrawable->ePixelFormat = PVRDRIGetPixelFormat(psGLMode);
+   if (psPVRDrawable->ePixelFormat == IMG_PIXFMT_UNKNOWN) {
+      __driUtilMessage("%s: Couldn't work out pixel format", __func__);
+      goto ErrorDrawableFree;
+   }
+
+   if (!PVRMutexInit(&psPVRDrawable->sMutex, PTHREAD_MUTEX_RECURSIVE)) {
+      __driUtilMessage("%s: Couldn't initialise drawable mutex", __func__);
+      goto ErrorDrawableFree;
+   }
+
+   PVRDRIConfigFromMesa(&sConfigInfo, psGLMode);
+   if (!PVRDRIEGLDrawableConfigFromGLMode(psDrawableImpl,
+         &sConfigInfo,
+         supportedAPIs,
+         psPVRDrawable->ePixelFormat)) {
+      __driUtilMessage("%s: Couldn't derive EGL config", __func__);
+      goto ErrorDrawableMutexDeinit;
+   }
+
    /* Initialisation is completed in MakeCurrent */
-#if defined(DEBUG)
-   p_atomic_inc(&psPVRScreen->iDrawableAlloc);
-#endif
    PVRDRIScreenAddReference(psPVRScreen);
    return GL_TRUE;
 
+ErrorDrawableMutexDeinit:
+   PVRMutexDeinit(&psPVRDrawable->sMutex);
+
 ErrorDrawableFree:
-   DRISUPDestroyDrawable(psPVRDrawable->psDRISUPDrawable);
+   PVRDRIDestroyDrawableImpl(psDrawableImpl);
    free(psPVRDrawable);
    psDRIDrawable->driverPrivate = NULL;
 
@@ -471,9 +890,26 @@ ErrorDrawableFree:
 static void
 PVRDRIDestroyBuffer(__DRIdrawable *psDRIDrawable)
 {
-   PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
+   PVRDRIDrawable *psPVRDrawable = (PVRDRIDrawable*) psDRIDrawable->driverPrivate;
+   PVRDRIScreen *psPVRScreen = psPVRDrawable->psPVRScreen;
 
-   PVRDRIDrawableRemoveReference(psPVRDrawable);
+   PVRDRIScreenLock(psPVRScreen);
+
+   PVRDrawableUnbindContexts(psPVRDrawable);
+
+   PVRDRIDrawableDeinit(psPVRDrawable);
+
+   PVREGLDrawableDestroyConfig(psPVRDrawable->psImpl);
+
+   PVRMutexDeinit(&psPVRDrawable->sMutex);
+
+   PVRDRIDestroyDrawableImpl(psPVRDrawable->psImpl);
+
+   free(psPVRDrawable);
+
+   PVRDRIScreenUnlock(psPVRScreen);
+
+   PVRDRIScreenRemoveReference(psPVRScreen);
 }
 
 static GLboolean
@@ -481,44 +917,72 @@ PVRDRIMakeCurrent(__DRIcontext *psDRIContext,
                   __DRIdrawable *psDRIWrite, __DRIdrawable *psDRIRead)
 {
    PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
-   struct DRISUPDrawable *psDRISUPWrite;
-   struct DRISUPDrawable *psDRISUPRead;
+   PVRDRIDrawable *psPVRWrite = (psDRIWrite) ? (PVRDRIDrawable*) psDRIWrite->driverPrivate : NULL;
+   PVRDRIDrawable *psPVRRead = (psDRIRead) ? (PVRDRIDrawable*) psDRIRead->driverPrivate : NULL;
 
-   if (psDRIWrite) {
-      PVRDRIDrawable *psPVRWrite = psDRIWrite->driverPrivate;
+   PVRDRIScreenLock(psPVRContext->psPVRScreen);
 
-      psDRISUPWrite = psPVRWrite->psDRISUPDrawable;
-   } else {
-      psDRISUPWrite = NULL;
+   if (psPVRWrite != NULL)
+   {
+      if (!PVRDRIDrawableInit(psPVRWrite)) {
+         __driUtilMessage("%s: Couldn't initialise write drawable", __func__);
+         goto ErrorUnlock;
+      }
    }
 
-   if (psDRIRead) {
-      PVRDRIDrawable *psPVRRead = psDRIRead->driverPrivate;
-
-      psDRISUPRead = psPVRRead->psDRISUPDrawable;
-   } else {
-      psDRISUPRead = NULL;
+   if (psPVRRead != NULL) {
+      if (!PVRDRIDrawableInit(psPVRRead)) {
+         __driUtilMessage("%s: Couldn't initialise read drawable", __func__);
+         goto ErrorUnlock;
+      }
    }
 
-   if (!DRISUPMakeCurrent(psPVRContext->psDRISUPContext,
-                          psDRISUPWrite, psDRISUPRead))
+   if (!PVRDRIMakeCurrentGC(psPVRContext->eAPI,
+         psPVRContext->psPVRScreen->psImpl,
+         psPVRContext->psImpl,
+         psPVRWrite == NULL ? NULL : psPVRWrite->psImpl,
+         psPVRRead == NULL ? NULL : psPVRRead->psImpl))
       goto ErrorUnlock;
 
+   PVRQDequeue(&psPVRContext->sQElem);
+
+   if (psPVRWrite != NULL)
+      PVRQQueue(&psPVRWrite->sPVRContextHead, &psPVRContext->sQElem);
+
+   psPVRContext->psPVRDrawable = psPVRWrite;
+
+   if (psPVRWrite != NULL && psPVRContext->eAPI == PVRDRI_API_GL)
+      PVRDRIEGLSetFrontBufferCallback(psPVRContext->eAPI,
+                                      psPVRContext->psPVRScreen->psImpl,
+                                      psPVRWrite->psImpl,
+                                      PVRDRIDisplayFrontBuffer);
+
    pvrdri_set_dispatch_table(psPVRContext);
+
+   PVRDRIThreadSetCurrentScreen(psPVRContext->psPVRScreen);
+
+   PVRDRIScreenUnlock(psPVRContext->psPVRScreen);
 
    return GL_TRUE;
 
 ErrorUnlock:
+   PVRDRIScreenUnlock(psPVRContext->psPVRScreen);
+
    return GL_FALSE;
 }
 
 static GLboolean
 PVRDRIUnbindContext(__DRIcontext *psDRIContext)
 {
-   PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+   PVRDRIContext *psPVRContext = (PVRDRIContext*) psDRIContext->driverPrivate;
+   PVRDRIScreen *psPVRScreen = psPVRContext->psPVRScreen;
 
    pvrdri_set_null_dispatch_table();
-   DRISUPUnbindContext(psPVRContext->psDRISUPContext);
+
+   PVRDRIScreenLock(psPVRScreen);
+   PVRContextUnbind(psPVRContext, true, false);
+   PVRDRIThreadSetCurrentScreen(NULL);
+   PVRDRIScreenUnlock(psPVRScreen);
 
    return GL_TRUE;
 }
@@ -529,6 +993,29 @@ PVRDRIAllocateBuffer(__DRIscreen *psDRIScreen, unsigned int uAttachment,
 {
    PVRDRIScreen *psPVRScreen = psDRIScreen->driverPrivate;
    struct PVRBuffer *psBuffer;
+   unsigned int uiBpp;
+
+   /* GEM names are only supported on primary nodes */
+   if (drmGetNodeTypeFromFd(psDRIScreen->fd) != DRM_NODE_PRIMARY) {
+      __driUtilMessage("%s: Cannot allocate buffer", __func__);
+      return NULL;
+   }
+
+   /* This is based upon PVRDRIGetPixelFormat */
+   switch (uFormat)
+   {
+   case 32:
+   case 16:
+      /* Format (depth) and bpp match */
+      uiBpp = uFormat;
+      break;
+   case 24:
+      uiBpp = 32;
+      break;
+   default:
+      __driUtilMessage("%s: Unsupported format '%u'", __func__, uFormat);
+      return NULL;
+   }
 
    psBuffer = calloc(1, sizeof(*psBuffer));
    if (psBuffer == NULL) {
@@ -536,22 +1023,19 @@ PVRDRIAllocateBuffer(__DRIscreen *psDRIScreen, unsigned int uAttachment,
       return NULL;
    }
 
-   psBuffer->psDRISUPBuffer =
-      DRISUPAllocateBuffer(psPVRScreen->psDRISUPScreen, uAttachment, uFormat,
-                           iWidth, iHeight, &psBuffer->sDRIBuffer.name,
-                           &psBuffer->sDRIBuffer.pitch,
-                           &psBuffer->sDRIBuffer.cpp,
-                           &psBuffer->sDRIBuffer.flags);
-   if (!psBuffer->psDRISUPBuffer) {
-      __driUtilMessage("%s: Failed to create DRI Support buffer", __func__);
+   psBuffer->psImpl =
+      PVRDRIBufferCreate(psPVRScreen->psImpl,
+                         iWidth, iHeight, uiBpp,
+                         PVDRI_BUFFER_USE_SHARE,
+                         &psBuffer->sDRIBuffer.pitch);
+   if (!psBuffer->psImpl) {
+      __driUtilMessage("%s: Failed to create backing buffer", __func__);
       goto ErrorFreeDRIBuffer;
    }
 
    psBuffer->sDRIBuffer.attachment = uAttachment;
-
-#if defined(DEBUG)
-   p_atomic_inc(&psPVRScreen->iBufferAlloc);
-#endif
+   psBuffer->sDRIBuffer.name = PVRDRIBufferGetName(psBuffer->psImpl);
+   psBuffer->sDRIBuffer.cpp = uiBpp / 8;
 
    return &psBuffer->sDRIBuffer;
 
@@ -565,15 +1049,10 @@ static void
 PVRDRIReleaseBuffer(__DRIscreen *psDRIScreen, __DRIbuffer *psDRIBuffer)
 {
    struct PVRBuffer *psPVRBuffer = (struct PVRBuffer *) psDRIBuffer;
-   PVRDRIScreen *psPVRScreen = psDRIScreen->driverPrivate;
 
-   DRISUPReleaseBuffer(psPVRScreen->psDRISUPScreen,
-                       psPVRBuffer->psDRISUPBuffer);
+   (void) psDRIScreen;
 
-#if defined(DEBUG)
-   p_atomic_dec(&psPVRScreen->iBufferAlloc);
-#endif
-
+   PVRDRIBufferDestroy(psPVRBuffer->psImpl);
    free(psPVRBuffer);
 }
 
