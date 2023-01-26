@@ -2305,6 +2305,8 @@ wsi_wl_swapchain_chain_free(struct wsi_wl_swapchain *chain,
    }
 
    wsi_swapchain_finish(&chain->base);
+
+   vk_free(pAllocator, (void *)chain->drm_modifiers);
 }
 
 static VkResult
@@ -2442,12 +2444,27 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    } else {
       chain->shm_format = wl_shm_format_for_vk_format(chain->vk_format, alpha);
    }
+
    chain->num_drm_modifiers = num_drm_modifiers;
-   chain->drm_modifiers = drm_modifiers;
+   if (num_drm_modifiers > 0) {
+      uint64_t *modifiers;
+      const size_t modifiers_size = sizeof(*modifiers) * num_drm_modifiers;
+
+      modifiers = vk_alloc(pAllocator, modifiers_size, 8,
+                           VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      if (!modifiers) {
+         result = VK_ERROR_OUT_OF_HOST_MEMORY;
+         goto fail_modifiers_alloc;
+      }
+
+      memcpy(modifiers, drm_modifiers, modifiers_size);
+
+      chain->drm_modifiers = modifiers;
+   }
 
    if (chain->wsi_wl_surface->display->wp_presentation_notwrapped) {
       if (!wsi_init_pthread_cond_monotonic(&chain->present_ids.list_advanced))
-         goto fail;
+         goto fail_present_ids_init;
       pthread_mutex_init(&chain->present_ids.lock, NULL);
 
       wl_list_init(&chain->present_ids.outstanding_list);
@@ -2476,6 +2493,8 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
 fail_image_init:
    wsi_wl_swapchain_images_free(chain);
 
+fail_present_ids_init:
+fail_modifiers_alloc:
    wsi_wl_swapchain_chain_free(chain, pAllocator);
 fail:
    vk_free(pAllocator, chain);
