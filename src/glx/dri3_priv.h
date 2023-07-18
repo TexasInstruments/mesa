@@ -97,6 +97,7 @@ struct dri3_screen {
    const __DRI2rendererQueryExtension *rendererQuery;
    const __DRI2interopExtension *interop;
    const __DRIconfig **driver_configs;
+   const __DRIdriverCompatibilityExtension *driver_compatibility;
 
    void *driver;
    /* fd of the GPU used for rendering. */
@@ -109,6 +110,9 @@ struct dri3_screen {
    bool prefer_back_buffer_reuse;
 
    struct loader_dri3_extensions loader_dri3_ext;
+
+   /* Indicates the render and display GPUs are compatible */
+   bool compat_gpus;
 };
 
 struct dri3_drawable {

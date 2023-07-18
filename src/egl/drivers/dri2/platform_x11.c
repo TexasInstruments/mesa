@@ -1545,7 +1545,7 @@ dri2_initialize_x11_swrast(_EGLDisplay *disp)
 #endif
       dri2_dpy->swap_available = EGL_TRUE;
       dri2_x11_setup_swap_interval(disp);
-      if (dri2_dpy->fd_render_gpu == dri2_dpy->fd_display_gpu)
+      if (dri2_dpy->compat_gpus)
          disp->Extensions.KHR_image_pixmap = EGL_TRUE;
       disp->Extensions.NOK_texture_from_pixmap = EGL_TRUE;
       disp->Extensions.CHROMIUM_sync_control = EGL_TRUE;
@@ -1625,7 +1625,7 @@ dri2_initialize_x11_dri3(_EGLDisplay *disp)
 
    dri2_x11_setup_swap_interval(disp);
 
-   if (dri2_dpy->fd_render_gpu == dri2_dpy->fd_display_gpu)
+   if (dri2_dpy->compat_gpus)
       disp->Extensions.KHR_image_pixmap = EGL_TRUE;
    disp->Extensions.NOK_texture_from_pixmap = EGL_TRUE;
    disp->Extensions.CHROMIUM_sync_control = EGL_TRUE;

@@ -2249,4 +2249,23 @@ struct __DRImutableRenderBufferLoaderExtensionRec {
                                void *loaderPrivate);
 };
 
+#define __DRI_DRIVER_COMPATIBILITY "DRI_DriverCompatibility"
+#define __DRI_DRIVER_COMPATIBILITY_VERSION 1
+
+typedef struct __DRIdriverCompatibilityExtensionRec __DRIdriverCompatibilityExtension;
+struct __DRIdriverCompatibilityExtensionRec {
+   __DRIextension base;
+
+   /**
+    * Check compatibility of render and display GPU drivers.
+    * Return true if the drivers can interoperate without restriction
+    * (e.g. no intermediate linear buffers or blits between buffers
+    * are required).
+    */
+   bool (*checkDriverCompatibility)(int fd_render_gpu,
+                                    const char *driver_name_render_gpu,
+                                    int fd_display_gpu,
+                                    const char *driver_name_display_gpu);
+};
+
 #endif
