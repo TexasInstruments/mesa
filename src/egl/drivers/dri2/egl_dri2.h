@@ -252,6 +252,7 @@ struct dri2_egl_display {
    const __DRI2interopExtension *interop;
    const __DRIconfigOptionsExtension *configOptions;
    const __DRImutableRenderBufferDriverExtension *mutable_render_buffer;
+   const __DRIdriverCompatibilityExtension *driver_compatibility;
    /* fd of the GPU used for rendering. */
    int fd_render_gpu;
    /* fd of the GPU used for display. If the same GPU is used for display
@@ -318,6 +319,9 @@ struct dri2_egl_display {
 #endif
 
    bool is_render_node;
+
+   /* Indicates the render and display GPUs are compatible */
+   bool compat_gpus;
 };
 
 struct dri2_egl_context {
