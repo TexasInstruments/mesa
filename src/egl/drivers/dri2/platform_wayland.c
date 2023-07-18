@@ -1119,7 +1119,7 @@ create_dri_image(struct dri2_egl_surface *dri2_surf,
       modifiers = NULL;
    }
 
-   if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu) {
+   if (!dri2_dpy->compat_gpus) {
       use_flags = 0;
       modifiers = NULL;
       num_modifiers = 0;
@@ -1264,13 +1264,13 @@ get_back_bo(struct dri2_egl_surface *dri2_surf,
    use_flags = __DRI_IMAGE_USE_SHARE | __DRI_IMAGE_USE_BACKBUFFER;
 
    if (dri2_surf->base.ProtectedContent) {
-      /* Protected buffers can't be read from another GPU */
-      if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+      /* Protected buffers can't be read from an incompatible GPU */
+      if (!dri2_dpy->compat_gpus)
          return -1;
       use_flags |= __DRI_IMAGE_USE_PROTECTED;
    }
 
-   if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu &&
+   if (!dri2_dpy->compat_gpus &&
        dri2_surf->back->linear_copy == NULL) {
       uint64_t linear_mod = DRM_FORMAT_MOD_LINEAR;
       const uint64_t *render_modifiers = NULL, *display_modifiers = NULL;
@@ -1474,7 +1474,7 @@ update_buffers(struct dri2_egl_surface *dri2_surf,
           dri2_surf->color_buffers[i].age > BUFFER_TRIM_AGE_HYSTERESIS) {
          loader_wayland_buffer_destroy(&dri2_surf->color_buffers[i].wayland_buffer);
          dri2_destroy_image(dri2_surf->color_buffers[i].dri_image);
-         if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+         if (!dri2_dpy->compat_gpus)
             dri2_destroy_image(
                dri2_surf->color_buffers[i].linear_copy);
          dri2_surf->color_buffers[i].wayland_buffer.buffer = NULL;
@@ -1798,7 +1798,7 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
       struct dri_image *image;
       struct wl_buffer *buffer;
 
-      if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+      if (!dri2_dpy->compat_gpus)
          image = dri2_surf->current->linear_copy;
       else
          image = dri2_surf->current->dri_image;
@@ -1835,7 +1835,7 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
       wl_surface_damage(dri2_surf->wayland_surface.wrapper, 0, 0, INT32_MAX,
                         INT32_MAX);
 
-   if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu) {
+   if (!dri2_dpy->compat_gpus) {
       _EGLContext *ctx = _eglGetCurrentContext();
       struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
       struct dri_drawable *dri_drawable = dri2_dpy->vtbl->get_dri_drawable(draw);
@@ -2465,7 +2465,7 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
       if (!server_supports_format(&dri2_dpy->formats, idx)) {
          /* In multi-GPU scenarios, we usually have a different buffer, so a
           * format conversion is easy compared to the overhead of the copy */
-         if (dri2_dpy->fd_render_gpu == dri2_dpy->fd_display_gpu)
+         if (dri2_dpy->compat_gpus)
             continue;
 
          /* Check if the server supports the alternate format */
@@ -2655,7 +2655,7 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
     * because the buffer of the EGLImage has likely a tiling mode the server
     * gpu won't support. These is no way to check for now. Thus do not support
     * the extension */
-   if (dri2_dpy->fd_render_gpu == dri2_dpy->fd_display_gpu)
+   if (dri2_dpy->compat_gpus)
       disp->Extensions.WL_create_wayland_buffer_from_image = EGL_TRUE;
 #endif
 

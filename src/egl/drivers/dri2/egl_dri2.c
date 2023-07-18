@@ -761,22 +761,6 @@ dri2_create_screen(_EGLDisplay *disp)
    else if (dri2_dpy->swrast)
       type = DRI_SCREEN_KMS_SWRAST;
 
-   if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu) {
-      driver_name_display_gpu =
-         loader_get_driver_for_fd(dri2_dpy->fd_display_gpu);
-      if (driver_name_display_gpu) {
-         /* check if driver name is matching so that non mesa drivers
-          * will not crash.
-          */
-         if (strcmp(dri2_dpy->driver_name, driver_name_display_gpu) == 0) {
-            dri2_dpy->dri_screen_display_gpu = driCreateNewScreen3(
-               0, dri2_dpy->fd_display_gpu, dri2_dpy->loader_extensions,
-               type, &dri2_dpy->driver_configs, false, dri2_dpy->multibuffers_available, disp);
-         }
-         free(driver_name_display_gpu);
-      }
-   }
-
    int screen_fd = dri2_dpy->swrast_not_kms ? -1 : dri2_dpy->fd_render_gpu;
    dri2_dpy->dri_screen_render_gpu = driCreateNewScreen3(
       0, screen_fd, dri2_dpy->loader_extensions, type,
@@ -787,7 +771,38 @@ dri2_create_screen(_EGLDisplay *disp)
       return EGL_FALSE;
    }
 
-   if (dri2_dpy->fd_render_gpu == dri2_dpy->fd_display_gpu)
+   if (dri2_dpy->fd_render_gpu == dri2_dpy->fd_display_gpu) {
+      dri2_dpy->compat_gpus = true;
+      driver_name_display_gpu = NULL;
+   } else {
+      driver_name_display_gpu =
+         loader_get_driver_for_fd(dri2_dpy->fd_display_gpu);
+
+      dri2_dpy->compat_gpus =
+         dri_check_driver_compatibility(dri2_dpy->dri_screen_render_gpu,
+                                        dri2_dpy->fd_render_gpu,
+                                        dri2_dpy->driver_name,
+                                        dri2_dpy->fd_display_gpu,
+                                        driver_name_display_gpu);
+   }
+
+   if (!dri2_dpy->compat_gpus) {
+      if (driver_name_display_gpu) {
+         /* check if driver name is matching so that non mesa drivers
+          * will not crash.
+          */
+         if (strcmp(dri2_dpy->driver_name, driver_name_display_gpu) == 0) {
+            dri2_dpy->dri_screen_display_gpu = driCreateNewScreen3(
+               0, dri2_dpy->fd_display_gpu, dri2_dpy->loader_extensions,
+               type, &dri2_dpy->driver_configs, false, dri2_dpy->multibuffers_available, disp);
+         }
+      }
+   }
+
+   if (driver_name_display_gpu)
+      free(driver_name_display_gpu);
+
+   if (dri2_dpy->compat_gpus)
       dri2_dpy->dri_screen_display_gpu = dri2_dpy->dri_screen_render_gpu;
 
    dri2_dpy->own_dri_screen = true;
@@ -940,8 +955,7 @@ dri2_display_destroy(_EGLDisplay *disp)
 
       driDestroyScreen(dri2_dpy->dri_screen_render_gpu);
 
-      if (dri2_dpy->dri_screen_display_gpu &&
-          dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+      if (dri2_dpy->dri_screen_display_gpu && !dri2_dpy->compat_gpus)
          driDestroyScreen(dri2_dpy->dri_screen_display_gpu);
    }
    if (dri2_dpy->fd_display_gpu >= 0 &&

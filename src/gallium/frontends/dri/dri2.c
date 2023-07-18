@@ -1796,6 +1796,28 @@ dri_set_blob_cache_funcs(struct dri_screen *screen, __DRIblobCacheSet set,
    disk_cache_set_callbacks(cache, set, get);
 }
 
+/**
+ * \brief the DRIdriverCompatibilityExtension check_driver_compatibility method
+ */
+bool
+dri_check_driver_compatibility(struct dri_screen *screen_render_gpu,
+                               int fd_render_gpu,
+                               const char *driver_name_render_gpu,
+                               int fd_display_gpu,
+                               const char *driver_name_display_gpu)
+{
+   struct pipe_screen *pscreen = screen_render_gpu->base.screen;
+
+   if (pscreen->check_driver_compatibility)
+      return pscreen->check_driver_compatibility(pscreen,
+                                                 fd_render_gpu,
+                                                 driver_name_render_gpu,
+                                                 fd_display_gpu,
+                                                 driver_name_display_gpu);
+   else
+      return fd_render_gpu == fd_display_gpu;
+}
+
 /*
  * Backend function init_screen.
  */

@@ -391,7 +391,7 @@ dri3_deinit_screen(struct glx_screen *base)
    struct dri3_screen *psc = (struct dri3_screen *) base;
 
    /* Free the direct rendering per screen data */
-   if (psc->fd_render_gpu != psc->fd_display_gpu && psc->driScreenDisplayGPU) {
+   if (!psc->compat_gpus && psc->driScreenDisplayGPU) {
       loader_dri3_close_screen(psc->driScreenDisplayGPU);
       driDestroyScreen(psc->driScreenDisplayGPU);
    }
@@ -499,8 +499,28 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
       goto handle_error;
    }
 
+   priv->driver = GLX_DRIVER_DRI3;
+
+   if (!dri_screen_init(&psc->base, priv, screen, psc->fd_render_gpu, loader_extensions, driver_name_is_inferred)) {
+      ErrorMessageF("glx: failed to create dri3 screen\n");
+      goto handle_error;
+   }
+
    if (psc->fd_render_gpu != psc->fd_display_gpu) {
       driverNameDisplayGPU = loader_get_driver_for_fd(psc->fd_display_gpu);
+
+      psc->compat_gpus =
+         dri_check_driver_compatibility(psc->base.frontend_screen,
+                                        psc->fd_render_gpu,
+                                        driverName,
+                                        psc->fd_display_gpu,
+                                        driverNameDisplayGPU);
+   } else {
+      driverNameDisplayGPU = NULL;
+      psc->compat_gpus = true;
+   }
+
+   if (!psc->compat_gpus) {
       if (driverNameDisplayGPU) {
 
          /* check if driver name is matching so that non mesa drivers
@@ -515,18 +535,13 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
                                                            &driver_configs, driver_name_is_inferred,
                                                            priv->has_multibuffer, psc);
          }
-
-         free(driverNameDisplayGPU);
       }
    }
-   priv->driver = GLX_DRIVER_DRI3;
 
-   if (!dri_screen_init(&psc->base, priv, screen, psc->fd_render_gpu, loader_extensions, driver_name_is_inferred)) {
-      ErrorMessageF("glx: failed to create dri3 screen\n");
-      goto handle_error;
-   }
+   if (driverNameDisplayGPU)
+      free(driverNameDisplayGPU);
 
-   if (psc->fd_render_gpu == psc->fd_display_gpu)
+   if (psc->compat_gpus)
       psc->driScreenDisplayGPU = psc->base.frontend_screen;
 
    psc->base.context_vtable = &dri3_context_vtable;
@@ -552,7 +567,7 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
    InfoMessageF("Using DRI3 for screen %d\n", screen);
 
    psc->prefer_back_buffer_reuse = 1;
-   if (psc->fd_render_gpu != psc->fd_display_gpu) {
+   if (!psc->compat_gpus) {
       unsigned value;
       if (dri_query_renderer_integer(psc->base.frontend_screen,
                                      __DRI2_RENDERER_PREFER_BACK_BUFFER_REUSE,
@@ -567,7 +582,7 @@ handle_error:
    if (!*return_zink)
       CriticalErrorMessageF("failed to load driver: %s\n", driverName ? driverName : "(null)");
 
-   if (psc->fd_render_gpu != psc->fd_display_gpu && psc->driScreenDisplayGPU)
+   if (!psc->compat_gpus && psc->driScreenDisplayGPU)
        driDestroyScreen(psc->driScreenDisplayGPU);
    psc->driScreenDisplayGPU = NULL;
    if (psc->fd_display_gpu >= 0 && psc->fd_render_gpu != psc->fd_display_gpu)

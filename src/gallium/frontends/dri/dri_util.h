@@ -337,6 +337,13 @@ PUBLIC void
 dri_set_blob_cache_funcs(struct dri_screen *screen, __DRIblobCacheSet set,
                          __DRIblobCacheGet get);
 
+PUBLIC bool
+dri_check_driver_compatibility(struct dri_screen *screen_render_gpu,
+                               int fd_render_gpu,
+                               const char *driver_name_render_gpu,
+                               int fd_display_gpu,
+                               const char *driver_name_display_gpu);
+
 PUBLIC struct pipe_screen *
 dri_get_pipe_screen(struct dri_screen *driScreen);
 

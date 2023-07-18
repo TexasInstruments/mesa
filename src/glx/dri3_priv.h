@@ -84,6 +84,8 @@ struct dri3_screen {
     */
    int fd_display_gpu;
    bool prefer_back_buffer_reuse;
+   /* Indicates the render and display GPUs are compatible */
+   bool compat_gpus;
 };
 
 struct dri3_drawable {

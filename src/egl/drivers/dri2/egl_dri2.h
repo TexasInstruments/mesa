@@ -296,6 +296,9 @@ struct dri2_egl_display {
    bool has_native_fence_fd;
    bool pure_swrast;
 #endif
+
+   /* Indicates the render and display GPUs are compatible */
+   bool compat_gpus;
 };
 
 struct dri2_egl_context {

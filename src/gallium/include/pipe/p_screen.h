@@ -593,6 +593,18 @@ struct pipe_screen {
    struct disk_cache *(*get_disk_shader_cache)(struct pipe_screen *screen);
 
    /**
+    * Check compatibility of render and display GPU drivers.
+    * Return true if the drivers can interoperate without restriction
+    * (e.g. no intermediate linear buffers or blits between buffers
+    * are required).
+    */
+   bool (*check_driver_compatibility)(struct pipe_screen *screen,
+                                      int fd_render_gpu,
+                                      const char *driver_name_render_gpu,
+                                      int fd_display_gpu,
+                                      const char *driver_name_display_gpu);
+
+   /**
     * Create a new texture object from the given template info, taking
     * format modifiers into account. \p modifiers specifies a list of format
     * modifier tokens, as defined in drm_fourcc.h. The driver then picks the
