@@ -1739,6 +1739,9 @@ offsets = {
     "FramebufferTextureARB" : 1703,
     "FramebufferTextureLayerARB" : 1704,
     "FramebufferTextureFaceARB" : 1705,
+    "DrawArraysInstancedNV" : 1706,
+    "DrawElementsInstancedNV" : 1707,
+    "VertexAttribDivisorNV" : 1708,
 }
 
 functions = [
