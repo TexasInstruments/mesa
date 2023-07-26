@@ -1663,6 +1663,9 @@ all_functions = [
     "FramebufferTextureARB",
     "FramebufferTextureLayerARB",
     "FramebufferTextureFaceARB",
+    "DrawArraysInstancedNV",
+    "DrawElementsInstancedNV",
+    "VertexAttribDivisorNV",
 
     # Keep these last. They are never used by any app.
     "ColorTable",
