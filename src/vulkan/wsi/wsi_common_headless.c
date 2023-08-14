@@ -512,8 +512,10 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    for (uint32_t i = 0; i < chain->base.image_count; i++) {
       result = wsi_create_image(&chain->base, &chain->base.image_info, -1,
                                 &chain->images[i].base);
-      if (result != VK_SUCCESS)
+      if (result != VK_SUCCESS) {
+         chain->images[i].base.image = VK_NULL_HANDLE;
          goto fail;
+      }
 
       chain->images[i].busy = false;
    }
