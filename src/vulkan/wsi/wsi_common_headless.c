@@ -25,6 +25,7 @@
 
 #include "util/macros.h"
 #include "util/hash_table.h"
+#include "util/os_time.h"
 #include "util/timespec.h"
 #include "util/u_thread.h"
 #include "util/xmlconfig.h"
@@ -255,6 +256,10 @@ struct wsi_headless_swapchain {
    VkPresentModeKHR                            present_mode;
    bool                                        fifo_ready;
 
+   mtx_t                                       present_id_mutex;
+   struct u_cnd_monotonic                      present_id_cond;
+   uint64_t                                    present_id;
+
    struct wsi_headless_image                       images[0];
 };
 VK_DEFINE_NONDISP_HANDLE_CASTS(wsi_headless_swapchain, base.base, VkSwapchainKHR,
@@ -316,7 +321,57 @@ wsi_headless_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
 
    chain->images[image_index].busy = false;
 
+   if (present_id) {
+      mtx_lock(&chain->present_id_mutex);
+      if (present_id > chain->present_id) {
+         chain->present_id = present_id;
+         u_cnd_monotonic_broadcast(&chain->present_id_cond);
+      }
+      mtx_unlock(&chain->present_id_mutex);
+   }
+
    return VK_SUCCESS;
+}
+
+static VkResult
+wsi_headless_wait_for_present(struct wsi_swapchain *wsi_chain,
+                              uint64_t waitValue,
+                              uint64_t timeout)
+{
+   struct wsi_headless_swapchain *chain =
+      (struct wsi_headless_swapchain *)wsi_chain;
+   struct timespec abs_timespec;
+   uint64_t abs_timeout = 0;
+
+   if (timeout != 0)
+      abs_timeout = os_time_get_absolute_timeout(timeout);
+
+   /* Need to observe that the swapchain semaphore has been unsignalled,
+    * as this is guaranteed when a present is complete. */
+   VkResult result = wsi_swapchain_wait_for_present_semaphore(
+      &chain->base, waitValue, timeout);
+   if (result != VK_SUCCESS)
+      return result;
+
+   timespec_from_nsec(&abs_timespec, abs_timeout);
+
+   mtx_lock(&chain->present_id_mutex);
+   while (chain->present_id < waitValue) {
+      int ret = u_cnd_monotonic_timedwait(&chain->present_id_cond,
+                                          &chain->present_id_mutex,
+                                          &abs_timespec);
+      if (ret == thrd_timedout) {
+         result = VK_TIMEOUT;
+         break;
+      }
+      if (ret != thrd_success) {
+         result = VK_ERROR_DEVICE_LOST;
+         break;
+      }
+   }
+   mtx_unlock(&chain->present_id_mutex);
+
+   return result;
 }
 
 static VkResult
@@ -332,6 +387,9 @@ wsi_headless_swapchain_destroy(struct wsi_swapchain *wsi_chain,
    }
 
    u_vector_finish(&chain->modifiers);
+
+   mtx_destroy(&chain->present_id_mutex);
+   u_cnd_monotonic_destroy(&chain->present_id_cond);
 
    wsi_swapchain_finish(&chain->base);
 
@@ -486,6 +544,19 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
       .modifiers = (const uint64_t **)&mods,
    };
 
+   int ret = mtx_init(&chain->present_id_mutex, mtx_plain);
+   if (ret != thrd_success) {
+      vk_free(pAllocator, chain);
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
+   ret = u_cnd_monotonic_init(&chain->present_id_cond);
+   if (ret != thrd_success) {
+      mtx_destroy(&chain->present_id_mutex);
+      vk_free(pAllocator, chain);
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
    result = wsi_swapchain_init(wsi_device, &chain->base, device,
                                pCreateInfo, &drm_params.base, pAllocator, -1);
 
@@ -493,6 +564,8 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    STACK_ARRAY_FINISH(mod_props);
 
    if (result != VK_SUCCESS) {
+      u_cnd_monotonic_destroy(&chain->present_id_cond);
+      mtx_destroy(&chain->present_id_mutex);
       vk_free(pAllocator, chain);
       return result;
    }
@@ -501,6 +574,7 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    chain->base.get_wsi_image = wsi_headless_swapchain_get_wsi_image;
    chain->base.acquire_next_image = wsi_headless_swapchain_acquire_next_image;
    chain->base.queue_present = wsi_headless_swapchain_queue_present;
+   chain->base.wait_for_present = wsi_headless_wait_for_present;
    chain->base.present_mode = wsi_swapchain_get_present_mode(wsi_device, pCreateInfo);
    chain->base.image_count = num_images;
    chain->extent = pCreateInfo->imageExtent;
