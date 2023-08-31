@@ -992,8 +992,11 @@ wsi_wl_display_init(struct wsi_wayland *wsi_wl,
          /* Round-trip again to fetch dma-buf feedback */
          wl_display_roundtrip_queue(display->wl_display, display->queue);
 
-         if (wsi_wl->wsi->drm_info.hasRender ||
-             wsi_wl->wsi->drm_info.hasPrimary) {
+         if (wsi_wl->wsi->can_present_on_device)
+            display->same_gpu = wsi_wl->wsi->can_present_on_device(wsi_wl->wsi->pdevice,
+                                                                   display->fd);
+         else if (wsi_wl->wsi->drm_info.hasRender ||
+                  wsi_wl->wsi->drm_info.hasPrimary) {
             /* Apparently some wayland compositor do not send the render
              * device node but the primary, so test against both.
              */
