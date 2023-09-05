@@ -267,7 +267,8 @@ wsi_device_matches_drm_fd(const struct wsi_device *wsi, int drm_fd)
    bool match = false;
    switch (fd_device->bustype) {
    case DRM_BUS_PCI:
-      match = wsi->pci_bus_info.pciDomain == fd_device->businfo.pci->domain &&
+      match = wsi->ext_pci_bus_info &&
+              wsi->pci_bus_info.pciDomain == fd_device->businfo.pci->domain &&
               wsi->pci_bus_info.pciBus == fd_device->businfo.pci->bus &&
               wsi->pci_bus_info.pciDevice == fd_device->businfo.pci->dev &&
               wsi->pci_bus_info.pciFunction == fd_device->businfo.pci->func;

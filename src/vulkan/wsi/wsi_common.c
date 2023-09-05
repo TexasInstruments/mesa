@@ -93,15 +93,49 @@ wsi_device_init2(struct wsi_device *wsi,
    WSI_GET_CB(GetPhysicalDeviceQueueFamilyProperties);
 #undef WSI_GET_CB
 
+   const struct vk_device_extension_table *supported_extensions;
+
+   if (device_extensions)
+      supported_extensions = device_extensions;
+   else if (!opaque_vk_handles)
+      supported_extensions =
+         &vk_physical_device_from_handle(pdevice)->supported_extensions;
+   else
+      supported_extensions = NULL;
+
+   if (supported_extensions) {
+      wsi->has_import_memory_host =
+         supported_extensions->EXT_external_memory_host;
+      wsi->khr_present_wait =
+         supported_extensions->KHR_present_id &&
+         supported_extensions->KHR_present_wait;
+
+      /* We cannot expose KHR_present_wait without timeline semaphores. */
+      assert(!wsi->khr_present_wait || supported_extensions->KHR_timeline_semaphore);
+
+      wsi->ext_attachment_feedback_loop_layout =
+         supported_extensions->EXT_attachment_feedback_loop_layout;
+
+      wsi->ext_pci_bus_info =
+         supported_extensions->EXT_pci_bus_info;
+   }
+
    wsi->drm_info.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT;
-   wsi->pci_bus_info.sType =
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT;
-   wsi->pci_bus_info.pNext = &wsi->drm_info;
+
    VkPhysicalDeviceProperties2 pdp2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-      .pNext = &wsi->pci_bus_info,
    };
+
+   if (wsi->ext_pci_bus_info) {
+      wsi->pci_bus_info.sType =
+         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT;
+      wsi->pci_bus_info.pNext = &wsi->drm_info;
+
+      pdp2.pNext = &wsi->pci_bus_info;
+   } else {
+      pdp2.pNext = &wsi->drm_info;
+   }
    GetPhysicalDeviceProperties2(pdevice, &pdp2);
 
    wsi->maxImageDimension2D = pdp2.properties.limits.maxImageDimension2D;
@@ -138,30 +172,6 @@ wsi_device_init2(struct wsi_device *wsi,
       if (esp.externalSemaphoreFeatures &
           VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT)
          wsi->semaphore_export_handle_types |= handle_type;
-   }
-
-   const struct vk_device_extension_table *supported_extensions;
-
-   if (device_extensions)
-      supported_extensions = device_extensions;
-   else if (!opaque_vk_handles)
-      supported_extensions =
-         &vk_physical_device_from_handle(pdevice)->supported_extensions;
-   else
-      supported_extensions = NULL;
-
-   if (supported_extensions) {
-      wsi->has_import_memory_host =
-         supported_extensions->EXT_external_memory_host;
-      wsi->khr_present_wait =
-         supported_extensions->KHR_present_id &&
-         supported_extensions->KHR_present_wait;
-
-      /* We cannot expose KHR_present_wait without timeline semaphores. */
-      assert(!wsi->khr_present_wait || supported_extensions->KHR_timeline_semaphore);
-
-      wsi->ext_attachment_feedback_loop_layout =
-         supported_extensions->EXT_attachment_feedback_loop_layout;
    }
 
    list_inithead(&wsi->hotplug_fences);
