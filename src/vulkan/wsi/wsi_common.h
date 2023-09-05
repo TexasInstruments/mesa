@@ -243,6 +243,8 @@ struct wsi_device {
 
    bool ext_attachment_feedback_loop_layout;
 
+   bool ext_pci_bus_info;
+
 #define WSI_CB(cb) PFN_vk##cb cb
    WSI_CB(AllocateMemory);
    WSI_CB(AllocateCommandBuffers);
