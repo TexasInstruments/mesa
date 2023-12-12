@@ -437,10 +437,6 @@ PVRDRICreateBuffer(struct dri_screen *psDRIScreen,
    PVRDRIScreen *psPVRScreen = psDRIScreen->driverPrivate;
    PVRDRIDrawable *psPVRDrawable = NULL;
 
-   /* No known callers ever set this to true */
-   if (bIsPixmap)
-      return GL_FALSE;
-
    if (!psGLMode) {
       __driUtilMessage("%s: Invalid GL config", __func__);
       return GL_FALSE;
@@ -461,10 +457,11 @@ PVRDRICreateBuffer(struct dri_screen *psDRIScreen,
       PVRDRIScreenSupportedAPIs(psPVRScreen);
 
    psPVRDrawable->psDRISUPDrawable =
-      DRISUPCreateDrawable(opaque_dri_drawable(psDRIDrawable),
-                           psPVRScreen->psDRISUPScreen,
-                           psDRIDrawable->loaderPrivate,
-                           &psPVRDrawable->sConfig);
+      DRISUPCreateDrawableType(opaque_dri_drawable(psDRIDrawable),
+                               psPVRScreen->psDRISUPScreen,
+                               psDRIDrawable->loaderPrivate,
+                               &psPVRDrawable->sConfig,
+                               (bool)bIsPixmap);
    if (!psPVRDrawable->psDRISUPDrawable) {
       __driUtilMessage("%s: Couldn't create DRI Support drawable",
                        __func__);
@@ -648,7 +645,7 @@ PVRDRICheckDriverCompatibility(int iFdRenderGPU,
 }
 
 static const __DRIDriverAPIExtension pvr_driver_api_extension = {
-   .base = {__DRI_DRIVER_API, 1},
+   .base = {__DRI_DRIVER_API, 2},
    .initScreen = PVRDRIInitScreen,
    .destroyScreen = PVRDRIDestroyScreen,
    .createContext = PVRDRICreateContext,

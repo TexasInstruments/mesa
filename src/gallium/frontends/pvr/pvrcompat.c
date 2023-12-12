@@ -243,6 +243,7 @@ MODSUPRegisterSupportInterfaceV2(const void *pvInterface,
    case 3:
    case 4:
    case 5:
+   case 6:
       /* These versions require version 0 */
       return false;
    default:
@@ -252,6 +253,13 @@ MODSUPRegisterSupportInterfaceV2(const void *pvInterface,
    /* The "default" case should be associated with the latest version */
    switch (uVersion) {
    default:
+   case 6:
+      /* This version is an extension of versions 0 to 5 */
+      if (uMinVersion > 0)
+         return false;
+
+      uEnd = PVRDRIInterfaceV2End(v6);
+      break;
    case 5:
       /* This version is an extension of versions 0 to 4 */
       if (uMinVersion > 0)
@@ -909,4 +917,18 @@ DRISUPSetInFenceFd(__DRIimage *psImage, int iFd)
 {
    CallFuncV2(v5.SetInFenceFD,
               psImage, iFd);
+}
+
+struct DRISUPDrawable *
+DRISUPCreateDrawableType(struct __DRIdrawableRec *psDRIDrawable,
+                     struct DRISUPScreen *psDRISUPScreen,
+                     void *pvLoaderPrivate, PVRDRIConfig *psPVRDRIConfig,
+                     bool bIsPixmap)
+{
+   CallFuncV2(v6.CreateDrawableType,
+              psDRIDrawable, psDRISUPScreen, pvLoaderPrivate, psPVRDRIConfig,
+              bIsPixmap);
+
+   return DRISUPCreateDrawable(psDRIDrawable, psDRISUPScreen,
+                               pvLoaderPrivate, psPVRDRIConfig);
 }

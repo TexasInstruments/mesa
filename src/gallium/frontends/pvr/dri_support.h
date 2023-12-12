@@ -535,6 +535,15 @@ struct  PVRDRISupportInterfaceV2
 			(__DRIimage *psImage,
 			 int iFD);
 	} v5;
+	/* The v6 interface is an extension of v5, so v5 is required as well */
+	struct {
+		struct DRISUPDrawable *(*CreateDrawableType)
+			(struct __DRIdrawableRec *psDRIDrawable,
+			 struct DRISUPScreen *psDRISUPDrawable,
+			 void *pvLoaderPrivate,
+			 PVRDRIConfig *psPVRDRIConfig,
+			 bool bIsPixmap);
+	} v6;
 };
 
 struct PVRDRIImageList {

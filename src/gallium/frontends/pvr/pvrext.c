@@ -758,6 +758,7 @@ PVRDRIAdjustExtensions(unsigned int uVersion, unsigned int uMinVersion)
    /* __DRI2fenceExtension adjustment */
    switch (uVersion) {
    default:
+   case 6:
    case 5:
    case 4:
       /* Is the KHR_cl_event2 EGL extension supported? */
@@ -778,6 +779,7 @@ PVRDRIAdjustExtensions(unsigned int uVersion, unsigned int uMinVersion)
    /* __DRIimageExtension adjustment */
    switch (uVersion) {
    default:
+   case 6:
    case 5:
       if (!DRISUPHaveSetInFenceFd())
          pvrDRIImage.setInFenceFd = NULL;

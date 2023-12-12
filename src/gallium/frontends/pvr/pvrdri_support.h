@@ -51,6 +51,11 @@ struct DRISUPDrawable *DRISUPCreateDrawable(struct __DRIdrawableRec *psDRIDrawab
                                             struct DRISUPScreen *psDRISUPScreen,
                                             void *pvLoaderPrivate,
                                             PVRDRIConfig *psPVRDRIConfig);
+struct DRISUPDrawable *DRISUPCreateDrawableType(struct __DRIdrawableRec *psDRIDrawable,
+                                                struct DRISUPScreen *psDRISUPScreen,
+                                                void *pvLoaderPrivate,
+                                                PVRDRIConfig *psPVRDRIConfig,
+                                                bool bIsPixmap);
 void DRISUPDestroyDrawable(struct DRISUPDrawable *psDRISUPDrawable);
 
 bool DRISUPMakeCurrent(struct DRISUPContext *psDRISUPContext,
