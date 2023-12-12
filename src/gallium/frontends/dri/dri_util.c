@@ -875,9 +875,10 @@ static int driUnbindContext(__DRIcontext *pcp)
 /*@}*/
 
 static __DRIdrawable *
-driCreateNewDrawable(__DRIscreen *psp,
-                     const __DRIconfig *config,
-                     void *data)
+driCreateNewDrawableType(__DRIscreen *psp,
+                         const __DRIconfig *config,
+                         void *data,
+                         bool is_pixmap)
 {
     assert(data != NULL);
 
@@ -885,6 +886,9 @@ driCreateNewDrawable(__DRIscreen *psp,
     struct dri_drawable *drawable;
 
     if (screen->driver) {
+        GLboolean is_pixmap_hint = (screen->driver->base.version >= 2) ?
+                                   (GLboolean)is_pixmap : GL_FALSE;
+
         drawable = CALLOC_STRUCT(dri_drawable);
         if (!drawable)
 	    return NULL;
@@ -895,7 +899,7 @@ driCreateNewDrawable(__DRIscreen *psp,
         drawable->refcount = 1;
 
         if (!screen->driver->createBuffer(screen, drawable, &config->modes,
-                                          GL_FALSE)) {
+                                          is_pixmap_hint)) {
            FREE(drawable);
            return NULL;
         }
@@ -905,6 +909,14 @@ driCreateNewDrawable(__DRIscreen *psp,
     }
 
     return opaque_dri_drawable(drawable);
+}
+
+static __DRIdrawable *
+driCreateNewDrawable(__DRIscreen *psp,
+                     const __DRIconfig *config,
+                     void *data)
+{
+    return driCreateNewDrawableType(psp, config, data, false);
 }
 
 void
@@ -1310,10 +1322,11 @@ driImageFormatToGLFormat(uint32_t image_format)
 
 /** Image driver interface */
 const __DRIimageDriverExtension driImageDriverExtension = {
-    .base = { __DRI_IMAGE_DRIVER, 1 },
+    .base = { __DRI_IMAGE_DRIVER, 2 },
 
     .createNewScreen2           = driCreateNewScreen2,
     .createNewDrawable          = driCreateNewDrawable,
     .getAPIMask                 = driGetAPIMask,
     .createContextAttribs       = driCreateContextAttribs,
+    .createNewDrawableType      = driCreateNewDrawableType,
 };
