@@ -441,8 +441,16 @@ loader_dri3_drawable_init(xcb_connection_t *conn,
    dri3_update_max_num_back(draw);
 
    /* Create a new drawable */
-   draw->dri_drawable =
-      draw->ext->image_driver->createNewDrawable(dri_screen_render_gpu,
+   if (draw->ext->image_driver->base.version >= 2 &&
+       draw->ext->image_driver->createNewDrawableType != NULL)
+      draw->dri_drawable =
+         draw->ext->image_driver->createNewDrawableType(dri_screen_render_gpu,
+                                                 dri_config,
+                                                 draw,
+                                                 type == LOADER_DRI3_DRAWABLE_PIXMAP);
+   else
+      draw->dri_drawable =
+         draw->ext->image_driver->createNewDrawable(dri_screen_render_gpu,
                                                  dri_config,
                                                  draw);
 
