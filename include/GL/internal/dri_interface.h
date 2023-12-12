@@ -1020,6 +1020,12 @@ typedef __DRIdrawable *
                               const __DRIconfig *config,
                               void *loaderPrivate);
 
+typedef __DRIdrawable *
+(*__DRIcreateNewDrawableTypeFunc)(__DRIscreen *screen,
+                                  const __DRIconfig *config,
+                                  void *loaderPrivate,
+                                  bool is_pixmap);
+
 typedef __DRIcontext *
 (*__DRIcreateContextAttribsFunc)(__DRIscreen *screen,
                                  int api,
@@ -2193,7 +2199,7 @@ struct __DRIimageLoaderExtensionRec {
  */
 
 #define __DRI_IMAGE_DRIVER           "DRI_IMAGE_DRIVER"
-#define __DRI_IMAGE_DRIVER_VERSION   1
+#define __DRI_IMAGE_DRIVER_VERSION   2
 
 struct __DRIimageDriverExtensionRec {
    __DRIextension               base;
@@ -2203,6 +2209,9 @@ struct __DRIimageDriverExtensionRec {
    __DRIcreateNewDrawableFunc           createNewDrawable;
    __DRIcreateContextAttribsFunc        createContextAttribs;
    __DRIgetAPIMaskFunc                  getAPIMask;
+
+   /* Since version 2 */
+   __DRIcreateNewDrawableTypeFunc       createNewDrawableType;
 };
 
 /**
