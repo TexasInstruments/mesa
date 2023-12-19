@@ -42,6 +42,9 @@
 #include <GL/gl.h> /* mesa_interface needs GL types */
 
 #include "mesa_interface.h"
+
+#include "dri_screen.h"
+
 #include "gbm_driint.h"
 #include <gbm_backend_abi.h>
 #include "loader_dri_helper.h"
@@ -49,6 +52,7 @@
 #include "loader.h"
 #include "util/u_debug.h"
 #include "util/macros.h"
+#include "util/bitscan.h"
 #include "dri_util.h"
 #include "pipe/p_screen.h"
 #include "dri_screen.h"
@@ -1055,12 +1059,16 @@ gbm_dri_bo_map(struct gbm_bo *_bo,
 
    mtx_lock(&dri->mutex);
    if (!dri->context) {
-      unsigned error;
+      int apifs = ffs(dri->screen->api_mask);
 
-      dri->context = driCreateContextAttribs(dri->screen,
-                                             __DRI_API_OPENGL,
-                                             NULL, NULL, 0, NULL,
-                                             &error, NULL);
+      if (apifs) {
+         unsigned error;
+
+         dri->context = driCreateContextAttribs(dri->screen,
+                                                apifs - 1,
+                                                NULL, NULL, 0, NULL,
+                                                &error, NULL);
+      }
    }
    assert(dri->context);
    mtx_unlock(&dri->mutex);
@@ -1180,12 +1188,16 @@ gbm_dri_bo_blit(struct gbm_bo *_dst_bo, struct gbm_bo *_src_bo,
 
    mtx_lock(&dri->mutex);
    if (!dri->context) {
-      unsigned error;
+      int apifs = ffs(dri->screen->api_mask);
 
-      dri->context = driCreateContextAttribs(dri->screen,
-                                             __DRI_API_OPENGL,
-                                             NULL, NULL, 0, NULL,
-                                             &error, NULL);
+      if (apifs) {
+         unsigned error;
+
+         dri->context = driCreateContextAttribs(dri->screen,
+                                                apifs - 1,
+                                                NULL, NULL, 0, NULL,
+                                                &error, NULL);
+      }
    }
    assert(dri->context);
    mtx_unlock(&dri->mutex);
