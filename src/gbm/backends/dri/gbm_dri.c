@@ -44,6 +44,8 @@
 #include <GL/gl.h> /* dri_interface needs GL types */
 #include <GL/internal/dri_interface.h>
 
+#include "dri/dri_screen.h"
+
 #include "gbm_driint.h"
 
 #include "gbmint.h"
@@ -53,6 +55,7 @@
 #include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/os_file.h"
+#include "util/bitscan.h"
 
 /* For importing wl_buffer */
 #if HAVE_WAYLAND_PLATFORM
@@ -1143,13 +1146,17 @@ gbm_dri_bo_map(struct gbm_bo *_bo,
 
    mtx_lock(&dri->mutex);
    if (!dri->context) {
-      unsigned error;
+      int apifs = ffs(dri_screen(dri->screen)->api_mask);
 
-      dri->context =
-         dri->image_driver->createContextAttribs(dri->screen,
-                                                 __DRI_API_OPENGL,
-                                                 NULL, NULL, 0, NULL,
-                                                 &error, NULL);
+      if (apifs) {
+         unsigned error;
+
+         dri->context =
+            dri->image_driver->createContextAttribs(dri->screen,
+                                                    apifs - 1,
+                                                    NULL, NULL, 0, NULL,
+                                                    &error, NULL);
+      }
    }
    mtx_unlock(&dri->mutex);
    if (!dri->context) {
@@ -1277,13 +1284,17 @@ gbm_dri_bo_blit(struct gbm_bo *_dst_bo, struct gbm_bo *_src_bo,
 
    mtx_lock(&dri->mutex);
    if (!dri->context) {
-      unsigned error;
+      int apifs = ffs(dri_screen(dri->screen)->api_mask);
 
-      dri->context =
-         dri->image_driver->createContextAttribs(dri->screen,
-                                                 __DRI_API_OPENGL,
-                                                 NULL, NULL, 0, NULL,
-                                                 &error, NULL);
+      if (apifs) {
+         unsigned error;
+
+         dri->context =
+            dri->image_driver->createContextAttribs(dri->screen,
+                                                    apifs - 1,
+                                                    NULL, NULL, 0, NULL,
+                                                    &error, NULL);
+      }
    }
    mtx_unlock(&dri->mutex);
    if (!dri->context) {
