@@ -336,6 +336,10 @@ struct dri2_egl_display {
    uint32_t capabilities;
    char *device_name;
    bool is_render_node;
+   struct wl_drm *wl_client_drm;
+   int fd_server_gpu;
+   char *server_device_name;
+   bool server_authenticated;
 #endif
 
 #ifdef HAVE_NULL_PLATFORM

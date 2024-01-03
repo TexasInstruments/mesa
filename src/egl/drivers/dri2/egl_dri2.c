@@ -1430,6 +1430,7 @@ dri2_display_destroy(_EGLDisplay *disp)
 
 #ifdef HAVE_WAYLAND_PLATFORM
    free(dri2_dpy->device_name);
+   free(dri2_dpy->server_device_name);
 #endif
 
 #ifdef HAVE_ANDROID_PLATFORM
@@ -1454,6 +1455,12 @@ dri2_display_destroy(_EGLDisplay *disp)
       break;
    }
 
+#ifdef HAVE_WAYLAND_PLATFORM
+   if (dri2_dpy->fd_server_gpu >= 0 &&
+       dri2_dpy->fd_server_gpu != dri2_dpy->fd_display_gpu &&
+       dri2_dpy->fd_server_gpu != dri2_dpy->fd_render_gpu)
+      close(dri2_dpy->fd_server_gpu);
+#endif
    if (dri2_dpy->fd_display_gpu >= 0 &&
        dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
       close(dri2_dpy->fd_display_gpu);
@@ -1484,6 +1491,9 @@ dri2_display_create(void)
 
    dri2_dpy->fd_render_gpu = -1;
    dri2_dpy->fd_display_gpu = -1;
+#ifdef HAVE_WAYLAND_PLATFORM
+   dri2_dpy->fd_server_gpu = -1;
+#endif
 
 #ifdef HAVE_DRI3_MODIFIERS
    dri2_dpy->dri3_major_version = -1;
