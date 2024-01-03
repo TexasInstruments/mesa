@@ -1051,6 +1051,9 @@ dri2_display_destroy(_EGLDisplay *disp)
 
 #ifdef HAVE_WAYLAND_PLATFORM
    free(dri2_dpy->device_name);
+#ifdef HAVE_BIND_WL_DISPLAY
+   free(dri2_dpy->server_device_name);
+#endif
 #endif
 
    switch (disp->Platform) {
@@ -1081,6 +1084,12 @@ dri2_display_destroy(_EGLDisplay *disp)
       break;
    }
 
+#ifdef HAVE_BIND_WL_DISPLAY
+   if (dri2_dpy->fd_server_gpu >= 0 &&
+       dri2_dpy->fd_server_gpu != dri2_dpy->fd_display_gpu &&
+       dri2_dpy->fd_server_gpu != dri2_dpy->fd_render_gpu)
+      close(dri2_dpy->fd_server_gpu);
+#endif
    if (dri2_dpy->fd_display_gpu >= 0 &&
        dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
       close(dri2_dpy->fd_display_gpu);
@@ -1111,6 +1120,9 @@ dri2_display_create(_EGLDisplay *disp)
 
    dri2_dpy->fd_render_gpu = -1;
    dri2_dpy->fd_display_gpu = -1;
+#ifdef HAVE_BIND_WL_DISPLAY
+   dri2_dpy->fd_server_gpu = -1;
+#endif
    dri2_dpy->multibuffers_available = true;
    disp->DriverData = (void *)dri2_dpy;
 

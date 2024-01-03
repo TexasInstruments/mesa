@@ -2085,31 +2085,31 @@ drm_handle_device(void *data, struct wl_drm *drm, const char *device)
    struct dri2_egl_display *dri2_dpy = data;
    drm_magic_t magic;
 
-   dri2_dpy->device_name = strdup(device);
-   if (!dri2_dpy->device_name)
+   dri2_dpy->server_device_name = strdup(device);
+   if (!dri2_dpy->server_device_name)
       return;
 
-   dri2_dpy->fd_render_gpu = loader_open_device(dri2_dpy->device_name);
-   if (dri2_dpy->fd_render_gpu == -1) {
+   dri2_dpy->fd_server_gpu = loader_open_device(dri2_dpy->server_device_name);
+   if (dri2_dpy->fd_server_gpu == -1) {
       _eglLog(_EGL_WARNING, "wayland-egl: could not open %s (%s)",
-              dri2_dpy->device_name, strerror(errno));
-      free(dri2_dpy->device_name);
-      dri2_dpy->device_name = NULL;
+              dri2_dpy->server_device_name, strerror(errno));
+      free(dri2_dpy->server_device_name);
+      dri2_dpy->server_device_name = NULL;
       return;
    }
 
-   if (drmGetNodeTypeFromFd(dri2_dpy->fd_render_gpu) == DRM_NODE_RENDER) {
-      dri2_dpy->authenticated = true;
+   if (drmGetNodeTypeFromFd(dri2_dpy->fd_server_gpu) == DRM_NODE_RENDER) {
+      dri2_dpy->server_authenticated = true;
    } else {
-      if (drmGetMagic(dri2_dpy->fd_render_gpu, &magic)) {
-         close(dri2_dpy->fd_render_gpu);
-         dri2_dpy->fd_render_gpu = -1;
-         free(dri2_dpy->device_name);
-         dri2_dpy->device_name = NULL;
+      if (drmGetMagic(dri2_dpy->fd_server_gpu, &magic)) {
+         close(dri2_dpy->fd_server_gpu);
+         dri2_dpy->fd_server_gpu = -1;
+         free(dri2_dpy->server_device_name);
+         dri2_dpy->server_device_name = NULL;
          _eglLog(_EGL_WARNING, "wayland-egl: drmGetMagic failed");
          return;
       }
-      wl_drm_authenticate(dri2_dpy->wl_drm, magic);
+      wl_drm_authenticate(dri2_dpy->wl_client_drm, magic);
    }
 }
 
@@ -2138,7 +2138,7 @@ drm_handle_authenticated(void *data, struct wl_drm *drm)
 {
    struct dri2_egl_display *dri2_dpy = data;
 
-   dri2_dpy->authenticated = true;
+   dri2_dpy->server_authenticated = true;
 }
 
 static const struct wl_drm_listener drm_listener = {
@@ -2190,10 +2190,10 @@ static const struct zwp_linux_dmabuf_v1_listener dmabuf_listener = {
 static void
 wl_drm_bind(struct dri2_egl_display *dri2_dpy)
 {
-   dri2_dpy->wl_drm =
+   dri2_dpy->wl_client_drm =
       wl_registry_bind(dri2_dpy->wl_registry, dri2_dpy->wl_drm_name,
                        &wl_drm_interface, dri2_dpy->wl_drm_version);
-   wl_drm_add_listener(dri2_dpy->wl_drm, &drm_listener, dri2_dpy);
+   wl_drm_add_listener(dri2_dpy->wl_client_drm, &drm_listener, dri2_dpy);
 }
 #endif
 
@@ -2640,6 +2640,28 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
    }
 }
 
+#ifdef HAVE_BIND_WL_DISPLAY
+static bool
+dri2_initialize_wayland_wl_drm_extension(struct dri2_egl_display *dri2_dpy)
+{
+   /* wl_drm not advertised by compositor, so can't continue */
+   if (dri2_dpy->wl_drm_name == 0)
+      return false;
+   wl_drm_bind(dri2_dpy);
+
+   if (dri2_dpy->wl_client_drm == NULL)
+      return false;
+   if (roundtrip(dri2_dpy) < 0 || dri2_dpy->fd_server_gpu == -1)
+      return false;
+
+   if (!dri2_dpy->server_authenticated &&
+       (roundtrip(dri2_dpy) < 0 || !dri2_dpy->server_authenticated))
+      return false;
+
+   return true;
+}
+#endif
+
 static bool
 dri2_initialize_wayland_drm_extensions(struct dri2_egl_display *dri2_dpy)
 {
@@ -2665,22 +2687,22 @@ dri2_initialize_wayland_drm_extensions(struct dri2_egl_display *dri2_dpy)
    }
 
 #ifdef HAVE_BIND_WL_DISPLAY
-   /* We couldn't retrieve a render node from the dma-buf feedback (or the
-    * feedback was not advertised at all), so we must fallback to wl_drm. */
-   if (dri2_dpy->fd_render_gpu == -1) {
-      /* wl_drm not advertised by compositor, so can't continue */
-      if (dri2_dpy->wl_drm_name == 0)
-         return false;
-      wl_drm_bind(dri2_dpy);
+   {
+      bool have_wl_drm;
 
-      if (dri2_dpy->wl_drm == NULL)
-         return false;
-      if (roundtrip(dri2_dpy) < 0 || dri2_dpy->fd_render_gpu == -1)
-         return false;
+      have_wl_drm = dri2_initialize_wayland_wl_drm_extension(dri2_dpy);
 
-      if (!dri2_dpy->authenticated &&
-          (roundtrip(dri2_dpy) < 0 || !dri2_dpy->authenticated))
-         return false;
+      /* We couldn't retrieve a render node from the dma-buf feedback (or the
+       * feedback was not advertised at all), so we must fallback to wl_drm. */
+      if (dri2_dpy->fd_render_gpu == -1) {
+         if (!have_wl_drm)
+            return false;
+
+         dri2_dpy->wl_drm = dri2_dpy->wl_client_drm;
+         dri2_dpy->fd_render_gpu = dri2_dpy->fd_server_gpu;
+         dri2_dpy->device_name = strdup(dri2_dpy->server_device_name);
+         dri2_dpy->authenticated = dri2_dpy->server_authenticated;
+      }
    }
 #endif
    return true;
@@ -3363,8 +3385,8 @@ dri2_teardown_wayland(struct dri2_egl_display *dri2_dpy)
    if (dri2_dpy->wp_presentation)
       wp_presentation_destroy(dri2_dpy->wp_presentation);
 #ifdef HAVE_BIND_WL_DISPLAY
-   if (dri2_dpy->wl_drm)
-      wl_drm_destroy(dri2_dpy->wl_drm);
+   if (dri2_dpy->wl_client_drm)
+      wl_drm_destroy(dri2_dpy->wl_client_drm);
 #endif
    if (dri2_dpy->wl_dmabuf)
       zwp_linux_dmabuf_v1_destroy(dri2_dpy->wl_dmabuf);

@@ -310,6 +310,12 @@ struct dri2_egl_display {
    char *device_name;
    bool is_render_node;
    clockid_t presentation_clock_id;
+#ifdef HAVE_BIND_WL_DISPLAY
+   struct wl_drm *wl_client_drm;
+   int fd_server_gpu;
+   char *server_device_name;
+   bool server_authenticated;
+#endif
 #endif
 
 #ifdef HAVE_NULL_PLATFORM
