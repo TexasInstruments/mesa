@@ -156,8 +156,18 @@ struct wsi_display_swapchain {
    uint64_t                     present_id;
    VkResult                     present_id_error;
 
+   uint32_t                     fb_id;
+   uint32_t                     outgoing_fb_id;
+   uint32_t                     incoming_fb_id;
+   bool                         free_incoming;
+   struct wsi_display_swapchain *old_chain;
+   struct wsi_display_swapchain *new_chain;
+
    struct wsi_display_image     images[0];
 };
+
+VK_DEFINE_NONDISP_HANDLE_CASTS(wsi_display_swapchain, base.base, VkSwapchainKHR,
+                               VK_OBJECT_TYPE_SWAPCHAIN_KHR)
 
 struct wsi_display_fence {
    struct list_head             link;
@@ -1390,11 +1400,17 @@ wsi_display_image_finish(struct wsi_swapchain *drv_chain,
       (struct wsi_display_swapchain *) drv_chain;
    struct wsi_display *wsi = chain->wsi;
 
-   drmModeRmFB(wsi->fd, image->fb_id);
+   if (image->fb_id != chain->outgoing_fb_id)
+      drmModeRmFB(wsi->fd, image->fb_id);
+
    for (unsigned int i = 0; i < image->base.num_planes; i++)
       wsi_display_destroy_buffer(wsi, image->buffer[i]);
    wsi_destroy_image(&chain->base, &image->base);
 }
+
+static int
+wsi_display_wait_for_event(struct wsi_display *wsi,
+                           uint64_t timeout_ns);
 
 static VkResult
 wsi_display_swapchain_destroy(struct wsi_swapchain *drv_chain,
@@ -1402,6 +1418,52 @@ wsi_display_swapchain_destroy(struct wsi_swapchain *drv_chain,
 {
    struct wsi_display_swapchain *chain =
       (struct wsi_display_swapchain *) drv_chain;
+   struct wsi_display *wsi = chain->wsi;
+
+   mtx_lock(&wsi->wait_mutex);
+
+   for (;;) {
+      bool idle = true;
+
+      for (uint32_t i = 0; i < chain->base.image_count && idle; i++) {
+         switch (chain->images[i].state) {
+         case WSI_IMAGE_IDLE:
+         case WSI_IMAGE_DRAWING:
+         case WSI_IMAGE_DISPLAYING:
+            break;
+	 case WSI_IMAGE_QUEUED:
+	 case WSI_IMAGE_FLIPPING:
+            idle = false;
+            break;
+         default:
+            wsi_display_debug("unknown state %d for image %d whilst waiting\n",
+                              chain->images[i].state, i);
+            idle = false;
+            break;
+         }
+      }
+
+      if (idle)
+         break;
+      else {
+         int ret = wsi_display_wait_for_event(wsi, 1000 * 1000000ull);
+         if (ret && ret != thrd_timedout) {
+            wsi_display_debug("failed to wait for event: %d\n", ret);
+            break;
+         }
+      }
+   }
+
+   if (chain->old_chain)
+      chain->old_chain->new_chain = NULL;
+
+   if (chain->new_chain)
+      chain->new_chain->old_chain = NULL;
+
+   mtx_unlock(&wsi->wait_mutex);
+
+   if (chain->incoming_fb_id && chain->incoming_fb_id != chain->outgoing_fb_id)
+      drmModeRmFB(wsi->fd, chain->incoming_fb_id);
 
    for (uint32_t i = 0; i < chain->base.image_count; i++)
       wsi_display_image_finish(drv_chain, &chain->images[i]);
@@ -1441,7 +1503,7 @@ wsi_display_idle_old_displaying(struct wsi_display_image *active_image)
 }
 
 static VkResult
-_wsi_display_queue_next(struct wsi_swapchain *drv_chain);
+_wsi_display_queue_next(struct wsi_display_swapchain *chain);
 
 static void
 wsi_display_present_complete(struct wsi_display_swapchain *swapchain,
@@ -1468,6 +1530,23 @@ wsi_display_surface_error(struct wsi_display_swapchain *swapchain, VkResult resu
 }
 
 static void
+wsi_display_on_screen_fb_id(struct wsi_display_swapchain *chain, uint32_t fb_id)
+{
+   chain->fb_id = fb_id;
+
+   if (chain->new_chain) {
+      chain->new_chain->incoming_fb_id = fb_id;
+      chain->outgoing_fb_id = fb_id;
+   }
+
+   if (chain->old_chain) {
+      chain->old_chain->new_chain = NULL;
+      chain->old_chain = NULL;
+   }
+   chain->free_incoming = true;
+}
+
+static void
 wsi_display_page_flip_handler2(int fd,
                                unsigned int frame,
                                unsigned int sec,
@@ -1481,10 +1560,11 @@ wsi_display_page_flip_handler2(int fd,
    wsi_display_debug("image %ld displayed at %d\n",
                      image - &(image->chain->images[0]), frame);
    image->state = WSI_IMAGE_DISPLAYING;
+   wsi_display_on_screen_fb_id(chain, image->fb_id);
    wsi_display_present_complete(chain, image);
 
    wsi_display_idle_old_displaying(image);
-   VkResult result = _wsi_display_queue_next(&(chain->base));
+   VkResult result = _wsi_display_queue_next(chain);
    if (result != VK_SUCCESS)
       chain->status = result;
 }
@@ -2078,10 +2158,9 @@ wsi_register_vblank_event(struct wsi_display_fence *fence,
  * waiting to be displayed.
  */
 static VkResult
-_wsi_display_queue_next(struct wsi_swapchain *drv_chain)
+_wsi_display_queue_next(struct wsi_display_swapchain *chain_in)
 {
-   struct wsi_display_swapchain *chain =
-      (struct wsi_display_swapchain *) drv_chain;
+   struct wsi_display_swapchain *chain = chain_in;
    struct wsi_display *wsi = chain->wsi;
    VkIcdSurfaceDisplay *surface = chain->surface;
    wsi_display_mode *display_mode =
@@ -2097,27 +2176,31 @@ _wsi_display_queue_next(struct wsi_swapchain *drv_chain)
       connector->active = false;
 
    for (;;) {
-
-      /* Check to see if there is an image to display, or if some image is
-       * already queued */
-
       struct wsi_display_image *image = NULL;
 
-      for (uint32_t i = 0; i < chain->base.image_count; i++) {
-         struct wsi_display_image *tmp_image = &chain->images[i];
+      for (chain = chain_in; chain != NULL; chain = chain->new_chain) {
+         /* Check to see if there is an image to display, or if some image is
+          * already queued */
 
-         switch (tmp_image->state) {
-         case WSI_IMAGE_FLIPPING:
-            /* already flipping, don't send another to the kernel yet */
-            return VK_SUCCESS;
-         case WSI_IMAGE_QUEUED:
-            /* find the oldest queued */
-            if (!image || tmp_image->flip_sequence < image->flip_sequence)
-               image = tmp_image;
-            break;
-         default:
-            break;
+         for (uint32_t i = 0; i < chain->base.image_count; i++) {
+            struct wsi_display_image *tmp_image = &chain->images[i];
+
+            switch (tmp_image->state) {
+            case WSI_IMAGE_FLIPPING:
+               /* already flipping, don't send another to the kernel yet */
+               return VK_SUCCESS;
+            case WSI_IMAGE_QUEUED:
+               /* find the oldest queued */
+               if (!image || tmp_image->flip_sequence < image->flip_sequence)
+                  image = tmp_image;
+               break;
+            default:
+               break;
+            }
          }
+
+         if (image)
+            break;
       }
 
       if (!image)
@@ -2184,6 +2267,7 @@ _wsi_display_queue_next(struct wsi_swapchain *drv_chain)
              * previous image is now idle.
              */
             image->state = WSI_IMAGE_DISPLAYING;
+            wsi_display_on_screen_fb_id(chain, image->fb_id);
             wsi_display_present_complete(chain, image);
             wsi_display_idle_old_displaying(image);
             connector->active = true;
@@ -2216,6 +2300,7 @@ wsi_display_queue_present(struct wsi_swapchain *drv_chain,
       (struct wsi_display_swapchain *) drv_chain;
    struct wsi_display *wsi = chain->wsi;
    struct wsi_display_image *image = &chain->images[image_index];
+   uint32_t incoming_fb_id;
    VkResult result;
 
    /* Bail early if the swapchain is broken */
@@ -2236,11 +2321,24 @@ wsi_display_queue_present(struct wsi_swapchain *drv_chain,
    image->flip_sequence = ++chain->flip_sequence;
    image->state = WSI_IMAGE_QUEUED;
 
-   result = _wsi_display_queue_next(drv_chain);
+   struct wsi_display_swapchain *start_chain = chain->old_chain ?
+      chain->old_chain : chain;
+
+   result = _wsi_display_queue_next(start_chain);
    if (result != VK_SUCCESS)
       chain->status = result;
 
+   if (chain->free_incoming) {
+      incoming_fb_id = chain->incoming_fb_id;
+      chain->incoming_fb_id = 0;
+   } else {
+      incoming_fb_id = 0;
+   }
+
    mtx_unlock(&wsi->wait_mutex);
+
+   if (incoming_fb_id)
+      drmModeRmFB(wsi->fd, incoming_fb_id);
 
    if (result != VK_SUCCESS)
       return result;
@@ -2372,6 +2470,20 @@ wsi_display_surface_create_swapchain(
          vk_free(allocator, chain);
          goto fail_init_images;
       }
+   }
+
+   if (create_info->oldSwapchain) {
+      VK_FROM_HANDLE(wsi_display_swapchain, old_chain, create_info->oldSwapchain);
+      mtx_lock(&wsi->wait_mutex);
+
+      chain->old_chain = old_chain;
+      old_chain->new_chain = chain;
+
+      chain->incoming_fb_id = old_chain->fb_id ? old_chain->fb_id :
+         old_chain->incoming_fb_id;
+      old_chain->outgoing_fb_id = chain->incoming_fb_id;
+
+      mtx_unlock(&wsi->wait_mutex);
    }
 
    *swapchain_out = &chain->base;
