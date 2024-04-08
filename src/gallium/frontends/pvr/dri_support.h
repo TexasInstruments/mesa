@@ -133,6 +133,9 @@ struct PVRDRIContextConfig
 	int iResetStrategy;
 	unsigned int uPriority;
 	int iReleaseBehavior;
+
+	/* Introduced for v8.CreateContext */
+	bool bProtected;
 };
 
 /*
@@ -549,6 +552,16 @@ struct  PVRDRISupportInterfaceV2
 		int (*QueryCompatibleRenderOnlyDeviceFD)
 			(int iFD);
 	} v7;
+	struct {
+		unsigned int (*CreateContext)
+			(PVRDRIAPIType eAPI,
+			 PVRDRIConfig *psPVRDRIConfig,
+			 struct PVRDRIContextConfig *psCtxConfig,
+			 struct __DRIcontextRec *psDRIContext,
+			 struct DRISUPContext *psDRISUPSharedContext,
+			 struct DRISUPScreen *psDRISUPScreen,
+			 struct DRISUPContext **ppsDRISUPContext);
+	} v8;
 };
 
 struct PVRDRIImageList {
@@ -647,6 +660,11 @@ struct PVRDRICallbacksV2
 			(const struct __DRIscreenRec *psDRIScreen,
 			 void *pvLoaderPrivate);
 	} v4;
+	/*
+	 * The v5 interface has no additional entry points, it indicates
+	 * that support is required for the EXT_protected_content and
+	 * EXT_protected_surface EGL extensions.
+	 */
 };
 
 #endif /* defined(__PVRDRIIFCE_H__) */

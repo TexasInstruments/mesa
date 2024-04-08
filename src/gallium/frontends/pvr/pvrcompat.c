@@ -245,6 +245,7 @@ MODSUPRegisterSupportInterfaceV2(const void *pvInterface,
    case 5:
    case 6:
    case 7:
+   case 8:
       /* These versions require version 0 */
       return false;
    default:
@@ -254,6 +255,13 @@ MODSUPRegisterSupportInterfaceV2(const void *pvInterface,
    /* The "default" case should be associated with the latest version */
    switch (uVersion) {
    default:
+   case 8:
+      /* This version is an extension of versions 0 to 7 */
+      if (uMinVersion > 0)
+         return false;
+
+      uEnd = PVRDRIInterfaceV2End(v8);
+      break;
    case 7:
       /* This version is an extension of versions 0 to 6 */
       if (uMinVersion > 0)
@@ -333,19 +341,41 @@ DRISUPDestroyScreen(struct DRISUPScreen *psDRISUPScreen)
               psDRISUPScreen);
 }
 
-unsigned int
-DRISUPCreateContext(PVRDRIAPIType eAPI, PVRDRIConfig *psPVRDRIConfig,
-                    struct PVRDRIContextConfig *psCtxConfig,
-                    struct __DRIcontextRec *psDRIContext,
-                    struct DRISUPContext *psDRISUPSharedContext,
-                    struct DRISUPScreen *psDRISUPScreen,
-                    struct DRISUPContext **ppsDRISUPContext)
+static unsigned int
+DRISUPCreateContextV0(PVRDRIAPIType eAPI,
+                      PVRDRIConfig *psPVRDRIConfig,
+                      struct PVRDRIContextConfig *psCtxConfig,
+                      struct __DRIcontextRec *psDRIContext,
+                      struct DRISUPContext *psDRISUPSharedContext,
+                      struct DRISUPScreen *psDRISUPScreen,
+                      struct DRISUPContext **ppsDRISUPContext)
 {
    CallFuncV2(v0.CreateContext,
               eAPI, psPVRDRIConfig, psCtxConfig, psDRIContext,
               psDRISUPSharedContext, psDRISUPScreen, ppsDRISUPContext);
 
    return __DRI_CTX_ERROR_BAD_API;
+}
+
+unsigned int
+DRISUPCreateContext(PVRDRIAPIType eAPI,
+                    PVRDRIConfig *psPVRDRIConfig,
+                    struct PVRDRIContextConfig *psCtxConfig,
+                    struct __DRIcontextRec *psDRIContext,
+                    struct DRISUPContext *psDRISUPSharedContext,
+                    struct DRISUPScreen *psDRISUPScreen,
+                    struct DRISUPContext **ppsDRISUPContext)
+{
+   CallFuncV2(v8.CreateContext,
+              eAPI, psPVRDRIConfig, psCtxConfig, psDRIContext,
+              psDRISUPSharedContext, psDRISUPScreen, ppsDRISUPContext);
+
+   if (!psCtxConfig->bProtected)
+      return DRISUPCreateContextV0(eAPI, psPVRDRIConfig, psCtxConfig,
+                                   psDRIContext, psDRISUPSharedContext,
+                                   psDRISUPScreen, ppsDRISUPContext);
+
+   return __DRI_CTX_ERROR_UNKNOWN_ATTRIBUTE;
 }
 
 void

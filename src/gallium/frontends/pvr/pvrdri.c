@@ -208,12 +208,13 @@ PVRDRIInitScreen(struct dri_screen *psDRIScreen)
       .v3.DrawableRemoveReference = MODSUPDrawableRemoveReference,
       /* Version 4 callbacks */
       .v4.DestroyLoaderImageState = MODSUPDestroyLoaderImageState,
+      /* Version 5 has no callbacks */
    };
 
    if (!PVRLoaderIsSupported(psDRIScreen))
       return NULL;
 
-   if (!PVRDRICompatInit(&sDRICallbacksV2, 4, 0))
+   if (!PVRDRICompatInit(&sDRICallbacksV2, 5, 0))
       return NULL;
 
    psPVRScreen = calloc(1, sizeof(*psPVRScreen));
@@ -377,6 +378,9 @@ PVRDRICreateContext(gl_api eMesaAPI, const struct gl_config *psGLMode,
         __DRIVER_CONTEXT_ATTRIB_PRIORITY) != 0) {
       sCtxConfig.uPriority = psCtxConfig->priority;
    }
+
+   sCtxConfig.bProtected = (psCtxConfig->attribute_mask &
+                            __DRIVER_CONTEXT_ATTRIB_PROTECTED);
 
    *puError = DRISUPCreateContext(eAPI, &psPVRContext->sConfig, &sCtxConfig,
                                   opaque_dri_context(psDRIContext),
