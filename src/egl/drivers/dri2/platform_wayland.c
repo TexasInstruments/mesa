@@ -1248,8 +1248,8 @@ get_back_bo(struct dri2_egl_surface *dri2_surf, bool allow_preserve,
    use_flags = __DRI_IMAGE_USE_SHARE | __DRI_IMAGE_USE_BACKBUFFER;
 
    if (dri2_surf->base.ProtectedContent) {
-      /* Protected buffers can't be read from another GPU */
-      if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+      /* Protected buffers can't be read from an incompatible GPU */
+      if (!dri2_dpy->compat_gpus)
          return -1;
       use_flags |= __DRI_IMAGE_USE_PROTECTED;
    }
