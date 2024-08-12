@@ -264,6 +264,32 @@ pipe_loader_drm_release(struct pipe_loader_device **dev)
    pipe_loader_base_release(dev);
 }
 
+static bool
+pipe_loader_drm_is_compatible_render_capable_device_fd(int fd,
+                                                       const char * const *drivers,
+                                                       unsigned int n_drivers)
+{
+   if (loader_is_device_render_capable(fd)) {
+      unsigned int i;
+
+      for (i = 0; i < n_drivers; i++) {
+         drmVersionPtr version;
+
+         version = drmGetVersion(fd);
+         if (version) {
+            bool found = !strcmp(version->name, drivers[i]);
+
+            drmFreeVersion(version);
+
+            if (found)
+               return true;
+         }
+      }
+   }
+
+   return false;
+}
+
 int
 pipe_loader_get_compatible_render_capable_device_fd(int kms_only_fd)
 {
@@ -280,6 +306,22 @@ pipe_loader_get_compatible_render_capable_device_fd(int kms_only_fd)
    free(gpu_fds);
 
    return result;
+}
+
+static int *
+pipe_loader_one_fd_array(int fd, unsigned int *n_fds)
+{
+   int *one_fd = malloc(sizeof(*one_fd));
+
+   if (one_fd) {
+      *one_fd = fd;
+      *n_fds = 1;
+   } else {
+      close(fd);
+      *n_fds = 0;
+   }
+
+   return one_fd;
 }
 
 int *
@@ -314,6 +356,11 @@ pipe_loader_get_compatible_render_capable_device_fds(int kms_only_fd, unsigned i
       "vc4",
 #endif
    };
+
+   if (pipe_loader_drm_is_compatible_render_capable_device_fd(kms_only_fd,
+                                                              drivers,
+                                                              ARRAY_SIZE(drivers)))
+      return pipe_loader_one_fd_array(os_dupfd_cloexec(kms_only_fd), n_devices);
 
    if (!pipe_loader_drm_probe_fd(&dev, kms_only_fd, false))
       return NULL;
