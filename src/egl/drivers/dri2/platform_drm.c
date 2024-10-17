@@ -305,23 +305,24 @@ get_back_bo(struct dri2_egl_surface *dri2_surf)
    if (dri2_surf->back == NULL)
       return -1;
    if (dri2_surf->back->bo == NULL) {
-      if (surf->base.v0.modifiers && surf->base.v0.flags)
+      uint32_t flags = surf->base.v0.flags;
+
+      if (dri2_surf->base.ProtectedContent)
+         flags |= GBM_BO_USE_PROTECTED;
+
+      if (surf->base.v0.modifiers && flags)
          dri2_surf->back->bo = gbm_bo_create_with_modifiers2(
             &dri2_dpy->gbm_dri->base, surf->base.v0.width, surf->base.v0.height,
             surf->base.v0.format, surf->base.v0.modifiers, surf->base.v0.count,
-            surf->base.v0.flags);
+            flags);
       else if (surf->base.v0.modifiers)
          dri2_surf->back->bo = gbm_bo_create_with_modifiers(
             &dri2_dpy->gbm_dri->base, surf->base.v0.width, surf->base.v0.height,
             surf->base.v0.format, surf->base.v0.modifiers, surf->base.v0.count);
-      else {
-         unsigned flags = surf->base.v0.flags;
-         if (dri2_surf->base.ProtectedContent)
-            flags |= GBM_BO_USE_PROTECTED;
+      else
          dri2_surf->back->bo =
             gbm_bo_create(&dri2_dpy->gbm_dri->base, surf->base.v0.width,
                           surf->base.v0.height, surf->base.v0.format, flags);
-      }
    }
    if (dri2_surf->back->bo == NULL)
       return -1;
