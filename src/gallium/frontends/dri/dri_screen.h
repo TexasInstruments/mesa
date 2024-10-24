@@ -201,6 +201,10 @@ struct __DRIimageRec {
    enum __DRIChromaSiting vertical_siting;
 
    struct dri_screen *screen;
+
+#if defined(GALLIUM_SGX)
+   void *driverPrivate;
+#endif
 };
 
 static inline bool

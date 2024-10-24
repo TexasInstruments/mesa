@@ -239,11 +239,9 @@ struct PVRDRIImageShared
    PVRDRIEGLImageType eglImageType;
 };
 
-struct __DRIimageRec
+struct PVRDRIImage
 {
    int iRefCount;
-
-   void *loaderPrivate;
 
    struct PVRDRIImageShared *psShared;
 
@@ -590,23 +588,37 @@ static __DRIimage *
 CommonImageSetup(void *loaderPrivate)
 {
    __DRIimage *image;
+   struct PVRDRIImage *private;
 
    image = calloc(1, sizeof(*image));
    if (!image)
    {
-      return NULL;
+      goto fail_image;
    }
 
-   image->loaderPrivate = loaderPrivate;
-   image->iRefCount = 1;
+   private = calloc(1, sizeof(*private));
+   if (!private)
+   {
+      goto fail_private;
+   }
+
+   image->loader_private = loaderPrivate;
+   image->driverPrivate = private;
+   private->iRefCount = 1;
 
    return image;
+
+fail_private:
+   free(image);
+fail_image:
+   return NULL;
 }
 
 static void
 PVRDRIDestroyImage(__DRIimage *image)
 {
-   int iRefCount = __sync_sub_and_fetch(&image->iRefCount, 1);
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   int iRefCount = __sync_sub_and_fetch(&pvr_image->iRefCount, 1);
 
    assert(iRefCount >= 0);
 
@@ -615,16 +627,17 @@ PVRDRIDestroyImage(__DRIimage *image)
       return;
    }
 
-   if (image->psShared)
+   if (pvr_image->psShared)
    {
-      DestroyImageShared(image->psShared);
+      DestroyImageShared(pvr_image->psShared);
    }
 
-   if (image->psEGLImage)
+   if (pvr_image->psEGLImage)
    {
-      PVRDRIEGLImageFree(image->psEGLImage);
+      PVRDRIEGLImageFree(pvr_image->psEGLImage);
    }
 
+   free(pvr_image);
    free(image);
 }
 
@@ -665,6 +678,7 @@ PVRDRICreateImageFromRenderbuffer(__DRIcontext *context,
                                               int           renderbuffer,
                                               void         *loaderPrivate)
 {
+   struct PVRDRIImage *pvr_image;
    PVRDRIContext *psPVRContext = context->driverPrivate;
    __DRIscreen *screen = psPVRContext->psPVRScreen->psDRIScreen;
    unsigned e;
@@ -676,6 +690,7 @@ PVRDRICreateImageFromRenderbuffer(__DRIcontext *context,
    {
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
    psEGLImage = PVRDRIEGLImageCreate();
    if (!psEGLImage)
@@ -705,21 +720,21 @@ PVRDRICreateImageFromRenderbuffer(__DRIcontext *context,
     * We can't destroy the image after this point, as the
     * renderbuffer now has a reference to it.
     */
-   image->psShared = CreateImageSharedFromEGLImage(screen,
+   pvr_image->psShared = CreateImageSharedFromEGLImage(screen,
                      psEGLImage,
                      PVRDRI_EGLIMAGE_IMGEGL);
-   if (!image->psShared)
+   if (!pvr_image->psShared)
    {
       return NULL;
    }
 
-   image->psEGLImage = PVRDRIEGLImageDup(image->psShared->psEGLImage);
-   if (!image->psEGLImage)
+   pvr_image->psEGLImage = PVRDRIEGLImageDup(pvr_image->psShared->psEGLImage);
+   if (!pvr_image->psEGLImage)
    {
       return NULL;
    }
 
-   image->iRefCount++;
+   pvr_image->iRefCount++;
 
    return image;
 }
@@ -730,6 +745,7 @@ PVRDRICreateImage(__DRIscreen *screen,
                unsigned int use,
                void *loaderPrivate)
 {
+   struct PVRDRIImage *pvr_image;
    __DRIimage *image;
    int iStride;
 
@@ -738,27 +754,28 @@ PVRDRICreateImage(__DRIscreen *screen,
    {
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
-   image->psShared = CreateImageShared(screen, width, height, format, use, &iStride);
-   if (!image->psShared)
+   pvr_image->psShared = CreateImageShared(screen, width, height, format, use, &iStride);
+   if (!pvr_image->psShared)
    {
       PVRDRIDestroyImage(image);
       return NULL;
    }
 
-   image->psEGLImage = PVRDRIEGLImageCreateFromBuffer(width, height, iStride,
-                         image->psShared->psFormat->eIMGPixelFormat,
-                         image->psShared->eColourSpace,
-                         image->psShared->eChromaUInterp,
-                         image->psShared->eChromaUInterp,
-                         image->psShared->psBuffer);
-   if (!image->psEGLImage)
+   pvr_image->psEGLImage = PVRDRIEGLImageCreateFromBuffer(width, height, iStride,
+                         pvr_image->psShared->psFormat->eIMGPixelFormat,
+                         pvr_image->psShared->eColourSpace,
+                         pvr_image->psShared->eChromaUInterp,
+                         pvr_image->psShared->eChromaUInterp,
+                         pvr_image->psShared->psBuffer);
+   if (!pvr_image->psEGLImage)
    {
       PVRDRIDestroyImage(image);
       return NULL;
    }
 
-   PVRDRIEGLImageSetCallbackData(image->psEGLImage, image);
+   PVRDRIEGLImageSetCallbackData(pvr_image->psEGLImage, image);
 
    return image;
 }
@@ -766,11 +783,12 @@ PVRDRICreateImage(__DRIscreen *screen,
 static GLboolean
 PVRDRIQueryImage(__DRIimage *image, int attrib, int *value_ptr)
 {
-   struct PVRDRIImageShared *shared = image->psShared;
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   struct PVRDRIImageShared *shared = pvr_image->psShared;
    PVRDRIBufferAttribs sAttribs;
    int value;
 
-   PVRDRIEGLImageGetAttribs(image->psEGLImage, &sAttribs);
+   PVRDRIEGLImageGetAttribs(pvr_image->psEGLImage, &sAttribs);
 
    if (attrib == __DRI_IMAGE_ATTRIB_HANDLE ||
        attrib == __DRI_IMAGE_ATTRIB_NAME ||
@@ -862,6 +880,7 @@ PVRDRIQueryImage(__DRIimage *image, int attrib, int *value_ptr)
 static __DRIimage *
 PVRDRIDupImage(__DRIimage *srcImage, void *loaderPrivate)
 {
+   struct PVRDRIImage *pvr_image;
    __DRIimage *image;
 
    image = CommonImageSetup(loaderPrivate);
@@ -869,17 +888,19 @@ PVRDRIDupImage(__DRIimage *srcImage, void *loaderPrivate)
    {
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
-   image->psShared = RefImageShared(srcImage->psShared);
+   src_pvr_image = srcImage->driverPrivate;
+   pvr_image->psShared = RefImageShared(src_pvr_image->psShared);
 
-   image->psEGLImage = PVRDRIEGLImageDup(srcImage->psEGLImage);
-   if (!image->psEGLImage)
+   pvr_image->psEGLImage = PVRDRIEGLImageDup(srcImage->psEGLImage);
+   if (!pvr_image->psEGLImage)
    {
       PVRDRIDestroyImage(image);
       return NULL;
    }
 
-   PVRDRIEGLImageSetCallbackData(image->psEGLImage, image);
+   PVRDRIEGLImageSetCallbackData(pvr_image->psEGLImage, image);
 
    return image;
 }
@@ -887,7 +908,8 @@ PVRDRIDupImage(__DRIimage *srcImage, void *loaderPrivate)
 static GLboolean
 PVRDRIValidateUsage(__DRIimage *image, unsigned int use)
 {
-   __DRIscreen *screen = image->psShared->psPVRScreen->psDRIScreen;
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   __DRIscreen *screen = pvr_image->psShared->psPVRScreen->psDRIScreen;
 
    if (use & (__DRI_IMAGE_USE_SCANOUT | __DRI_IMAGE_USE_CURSOR)) {
       /*
@@ -917,6 +939,7 @@ PVRDRICreateImageFromNames(__DRIscreen *screen,
                    int *strides, int *offsets,
                    void *loaderPrivate)
 {
+   struct PVRDRIImage *pvr_image;
    __DRIimage *image;
    int iStride;
 
@@ -925,38 +948,39 @@ PVRDRICreateImageFromNames(__DRIscreen *screen,
    {
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
-   image->psShared = CreateImageSharedFromNames(screen, width, height, fourcc,
+   pvr_image->psShared = CreateImageSharedFromNames(screen, width, height, fourcc,
                        names, num_names, strides, offsets);
-   if (!image->psShared)
+   if (!pvr_image->psShared)
    {
       PVRDRIDestroyImage(image);
       return NULL;
    }
 
-   if (image->psShared->psFormat->uiNumPlanes == 1)
+   if (pvr_image->psShared->psFormat->uiNumPlanes == 1)
    {
       iStride = strides[0];
    }
    else
    {
-      iStride = width * PVRDRIPixFmtGetBlockSize(image->psShared->psFormat->eIMGPixelFormat);
+      iStride = width * PVRDRIPixFmtGetBlockSize(pvr_image->psShared->psFormat->eIMGPixelFormat);
    }
 
-   image->psEGLImage = PVRDRIEGLImageCreateFromBuffer(width, height,
+   pvr_image->psEGLImage = PVRDRIEGLImageCreateFromBuffer(width, height,
                          iStride,
-                         image->psShared->psFormat->eIMGPixelFormat,
-                         image->psShared->eColourSpace,
-                         image->psShared->eChromaUInterp,
-                         image->psShared->eChromaVInterp,
-                         image->psShared->psBuffer);
-   if (!image->psEGLImage)
+                         pvr_image->psShared->psFormat->eIMGPixelFormat,
+                         pvr_image->psShared->eColourSpace,
+                         pvr_image->psShared->eChromaUInterp,
+                         pvr_image->psShared->eChromaVInterp,
+                         pvr_image->psShared->psBuffer);
+   if (!pvr_image->psEGLImage)
    {
       PVRDRIDestroyImage(image);
       return NULL;
    }
 
-   PVRDRIEGLImageSetCallbackData(image->psEGLImage, image);
+   PVRDRIEGLImageSetCallbackData(pvr_image->psEGLImage, image);
 
    return image;
 }
@@ -983,6 +1007,7 @@ PVRDRICreateImageFromTexture(__DRIcontext *context,
                              void *loaderPrivate)
 {
    PVRDRIContext *psPVRContext = context->driverPrivate;
+   struct PVRDRIImage *pvr_image;
    __DRIscreen *screen = psPVRContext->psPVRScreen->psDRIScreen;
    __EGLImage *psEGLImage;
    __DRIimage *image;
@@ -1008,6 +1033,7 @@ PVRDRICreateImageFromTexture(__DRIcontext *context,
    {
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
    psEGLImage = PVRDRIEGLImageCreate();
    if (!psEGLImage)
@@ -1038,21 +1064,21 @@ PVRDRICreateImageFromTexture(__DRIcontext *context,
     * We can't destroy the image after this point, as the
     * texture now has a reference to it.
     */
-   image->psShared = CreateImageSharedFromEGLImage(screen,
+   pvr_image->psShared = CreateImageSharedFromEGLImage(screen,
                      psEGLImage,
                      PVRDRI_EGLIMAGE_IMGEGL);
-   if (!image->psShared)
+   if (!pvr_image->psShared)
    {
       return NULL;
    }
 
-   image->psEGLImage = PVRDRIEGLImageDup(image->psShared->psEGLImage);
-   if (!image->psEGLImage)
+   pvr_image->psEGLImage = PVRDRIEGLImageDup(pvr_image->psShared->psEGLImage);
+   if (!pvr_image->psEGLImage)
    {
       return NULL;
    }
 
-   image->iRefCount++;
+   pvr_image->iRefCount++;
 
    return image;
 }
@@ -1096,6 +1122,7 @@ PVRDRICreateImageFromBuffer(__DRIcontext *context,
                             void *loaderPrivate)
 {
    PVRDRIContext *psPVRContext = context->driverPrivate;
+   struct PVRDRIImage *pvr_image;
    __DRIscreen *screen = psPVRContext->psPVRScreen->psDRIScreen;
    __EGLImage *psEGLImage;
    __DRIimage *image;
@@ -1117,6 +1144,7 @@ PVRDRICreateImageFromBuffer(__DRIcontext *context,
    {
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
    psEGLImage = PVRDRIEGLImageCreate();
    if (!psEGLImage)
@@ -1145,21 +1173,21 @@ PVRDRICreateImageFromBuffer(__DRIcontext *context,
     * We can't destroy the image after this point, as the
     * OCL image now has a reference to it.
     */
-   image->psShared = CreateImageSharedFromEGLImage(screen,
+   pvr_image->psShared = CreateImageSharedFromEGLImage(screen,
                      psEGLImage,
                      PVRDRI_EGLIMAGE_IMGOCL);
-   if (!image->psShared)
+   if (!pvr_image->psShared)
    {
       return NULL;
    }
 
-   image->psEGLImage = PVRDRIEGLImageDup(image->psShared->psEGLImage);
-   if (!image->psEGLImage)
+   pvr_image->psEGLImage = PVRDRIEGLImageDup(pvr_image->psShared->psEGLImage);
+   if (!pvr_image->psEGLImage)
    {
       return NULL;
    }
 
-   image->iRefCount++;
+   pvr_image->iRefCount++;
 
    return image;
 }
@@ -1177,6 +1205,7 @@ PVRDRICreateImageFromDmaBufs(__DRIscreen *screen,
                                          void *loaderPrivate)
 {
    __DRIimage *image;
+   struct PVRDRIImage *pvr_image;
 
    image = CommonImageSetup(loaderPrivate);
    if (!image)
@@ -1184,33 +1213,34 @@ PVRDRICreateImageFromDmaBufs(__DRIscreen *screen,
       *error = __DRI_IMAGE_ERROR_BAD_ALLOC;
       return NULL;
    }
+   pvr_image = image->driverPrivate;
 
-   image->psShared = CreateImageSharedFromDmaBufs(screen, width, height, fourcc,
+   pvr_image->psShared = CreateImageSharedFromDmaBufs(screen, width, height, fourcc,
                          fds, num_fds, strides, offsets,
                          color_space, sample_range,
                          horiz_siting, vert_siting,
                          error);
-   if (!image->psShared)
+   if (!pvr_image->psShared)
    {
       PVRDRIDestroyImage(image);
       return NULL;
    }
 
-   image->psEGLImage = PVRDRIEGLImageCreateFromBuffer(width, height,
+   pvr_image->psEGLImage = PVRDRIEGLImageCreateFromBuffer(width, height,
                          strides[0],
-                         image->psShared->psFormat->eIMGPixelFormat,
-                         image->psShared->eColourSpace,
-                         image->psShared->eChromaUInterp,
-                         image->psShared->eChromaVInterp,
-                         image->psShared->psBuffer);
-   if (!image->psEGLImage)
+                         pvr_image->psShared->psFormat->eIMGPixelFormat,
+                         pvr_image->psShared->eColourSpace,
+                         pvr_image->psShared->eChromaUInterp,
+                         pvr_image->psShared->eChromaVInterp,
+                         pvr_image->psShared->psBuffer);
+   if (!pvr_image->psEGLImage)
    {
       PVRDRIDestroyImage(image);
       *error = __DRI_IMAGE_ERROR_BAD_ALLOC;
       return NULL;
    }
 
-   PVRDRIEGLImageSetCallbackData(image->psEGLImage, image);
+   PVRDRIEGLImageSetCallbackData(pvr_image->psEGLImage, image);
 
    *error = __DRI_IMAGE_ERROR_SUCCESS;
 
@@ -1219,7 +1249,8 @@ PVRDRICreateImageFromDmaBufs(__DRIscreen *screen,
 
 void PVRDRIRefImage(__DRIimage *image)
 {
-   int iRefCount = __sync_fetch_and_add(&image->iRefCount, 1);
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   int iRefCount = __sync_fetch_and_add(&pvr_image->iRefCount, 1);
 
    (void)iRefCount;
    assert(iRefCount > 0);
@@ -1232,25 +1263,29 @@ void PVRDRIUnrefImage(__DRIimage *image)
 
 PVRDRIImageType PVRDRIImageGetSharedType(__DRIimage *image)
 {
-   return image->psShared->eType;
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   return pvr_image->psShared->eType;
 }
 
-PVRDRIBufferImpl *PVRDRIImageGetSharedBuffer(__DRIimage *pImage)
+PVRDRIBufferImpl *PVRDRIImageGetSharedBuffer(__DRIimage *image)
 {
-   assert(pImage->psShared->eType != PVRDRI_IMAGE_FROM_EGLIMAGE);
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   assert(pvr_image->psShared->eType != PVRDRI_IMAGE_FROM_EGLIMAGE);
 
-   return pImage->psShared->psBuffer;
+   return pvr_image->psShared->psBuffer;
 }
 
-__EGLImage *PVRDRIImageGetSharedEGLImage(__DRIimage *pImage)
+__EGLImage *PVRDRIImageGetSharedEGLImage(__DRIimage *image)
 {
-   assert(pImage->psShared->eType == PVRDRI_IMAGE_FROM_EGLIMAGE);
-   return pImage->psShared->psEGLImage;
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   assert(pvr_image->psShared->eType == PVRDRI_IMAGE_FROM_EGLIMAGE);
+   return pvr_image->psShared->psEGLImage;
 }
 
-__EGLImage *PVRDRIImageGetEGLImage(__DRIimage *pImage)
+__EGLImage *PVRDRIImageGetEGLImage(__DRIimage *image)
 {
-   return pImage->psEGLImage;
+   struct PVRDRIImage *pvr_image = image->driverPrivate;
+   return pvr_image->psEGLImage;
 }
 
 __DRIimage *PVRDRIScreenGetDRIImage(void *hEGLImage)
