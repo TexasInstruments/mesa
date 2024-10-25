@@ -34,6 +34,9 @@
 
 #include "dri_util.h"
 
+#include "git_sha1.h"
+#include "GL/internal/mesa_interface.h"
+
 #include "sgx_dri.h"
 #include "sgx_mesa.h"
 
@@ -1074,35 +1077,83 @@ PVRDRIGetXMLConfigOptions(const char *pszDriverName)
    return driGetOptionsXml(&asConfigOptions[0], ARRAY_SIZE(asConfigOptions));
 }
 
-const struct __DriverAPIRec sgx_driver_api = {
-   .InitScreen = PVRDRIInitScreen,
-   .DestroyScreen = PVRDRIDestroyScreen,
-   .CreateContext = PVRDRICreateContext,
-   .DestroyContext = PVRDRIDestroyContext,
-   .CreateBuffer = PVRDRICreateBuffer,
-   .DestroyBuffer = PVRDRIDestroyBuffer,
-   .SwapBuffers = NULL,
-   .MakeCurrent = PVRDRIMakeCurrent,
-   .UnbindContext = PVRDRIUnbindContext,
-   .AllocateBuffer = PVRDRIAllocateBuffer,
-   .ReleaseBuffer = PVRDRIReleaseBuffer,
+static bool
+PVRDRICheckDriverCompatibility(int iFdRenderGPU,
+                               const char *psDriverNameRenderGPU,
+                               int iFdDisplayGPU,
+                               const char *psDriverNameDisplayGPU)
+{
+   bool bCompat;
+
+   mesa_logd("%s: Render driver name: %s FD: %d", __func__,
+                    psDriverNameRenderGPU, iFdRenderGPU);
+   mesa_logd("%s: Display driver name: %s FD: %d", __func__,
+                    psDriverNameDisplayGPU ? psDriverNameDisplayGPU : "",
+                    iFdDisplayGPU);
+
+#if defined(PVR_DRIVER_ALIAS_STRING)
+   mesa_logd("%s: PVR driver alias: %s", __func__,
+                    PVR_DRIVER_ALIAS_STRING);
+#endif
+
+   if (!psDriverNameDisplayGPU)
+      bCompat = false;
+   else if (!strcmp(psDriverNameDisplayGPU, psDriverNameRenderGPU))
+      bCompat = true;
+   else if (!strcmp(psDriverNameDisplayGPU, "pvr"))
+      bCompat = true;
+#if defined(PVR_DRIVER_ALIAS_STRING)
+   else if (!strcmp(psDriverNameDisplayGPU, PVR_DRIVER_ALIAS_STRING))
+      bCompat = true;
+#endif
+   else
+      bCompat = false;
+
+   mesa_logd("%s: Render and display drivers are %s", __func__,
+             bCompat ? "compatible" : "incompatible");
+
+   return bCompat;
+}
+
+static const __DRIDriverAPIExtension sgx_driver_api_extension = {
+   .base = {__DRI_DRIVER_API, 2},
+   .initScreen = PVRDRIInitScreen,
+   .destroyScreen = PVRDRIDestroyScreen,
+   .createContext = PVRDRICreateContext,
+   .destroyContext = PVRDRIDestroyContext,
+   .createBuffer = PVRDRICreateBuffer,
+   .destroyBuffer = PVRDRIDestroyBuffer,
+   .makeCurrent = PVRDRIMakeCurrent,
+   .unbindContext = PVRDRIUnbindContext,
+   .allocateBuffer = PVRDRIAllocateBuffer,
+   .releaseBuffer = PVRDRIReleaseBuffer,
 };
 
-static const struct __DRIDriverVtableExtensionRec pvr_vtable = {
-   .base = {__DRI_DRIVER_VTABLE, 1},
-   .vtable = &sgx_driver_api,
+static const __DRImesaCoreExtension sgx_mesa_core_extension = {
+   .base = {__DRI_MESA, 1},
+   .version_string = MESA_INTERFACE_VERSION_STRING,
+   .createNewScreen = driCreateNewScreen2,
+   .createContext = driCreateContextAttribs,
+   .initScreen = NULL,
 };
 
-const __DRIconfigOptionsExtension pvr_config_options = {
+static const __DRIconfigOptionsExtension sgx_config_options = {
    .base = { __DRI_CONFIG_OPTIONS, 2 },
    .getXml = PVRDRIGetXMLConfigOptions,
 };
 
+static const __DRIdriverCompatibilityExtension sgx_driver_compatibility = {
+   .base = { __DRI_DRIVER_COMPATIBILITY, 1 },
+   .checkDriverCompatibility = PVRDRICheckDriverCompatibility,
+};
+
 const __DRIextension *sgx_driver_extensions[] = {
    &driCoreExtension.base,
+   &sgx_mesa_core_extension.base,
    &driImageDriverExtension.base,
    &pvrDRI2Extension.base,
-   &pvr_vtable.base,
-   &pvr_config_options.base,
+   &sgx_config_options.base,
+   &sgx_driver_compatibility.base,
+   &sgx_driver_api_extension.base,
    NULL
 };
