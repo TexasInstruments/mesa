@@ -28,6 +28,8 @@
 #include <assert.h>
 
 #include "dri_util.h"
+#include "dri_helpers.h"
+#include "dri_drawable.h"
 
 #include "sgx_dri.h"
 
@@ -110,7 +112,7 @@ static inline void PVRDRIMarkAllRenderSurfacesAsInvalid(PVRDRIDrawable *psPVRDra
 static bool PVRImageDrawableGetNativeInfo(PVRDRIDrawable *psPVRDrawable)
 {
    __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
-   __DRIscreen *psDRIScreen = psPVRDrawable->psPVRScreen->psDRIScreen;
+   struct dri_screen *psDRIScreen = dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen);
    struct __DRIimageList sImages;
    uint32_t uiBufferMask;
    const PVRDRIImageFormat *psFormat;
@@ -133,7 +135,7 @@ static bool PVRImageDrawableGetNativeInfo(PVRDRIDrawable *psPVRDrawable)
    if (!psDRIScreen->image.loader->getBuffers(psDRIDrawable,
          psFormat->iDRIFormat,
          NULL,
-         psDRIDrawable->loaderPrivate,
+         dri_drawable(psDRIDrawable)->loaderPrivate,
          uiBufferMask,
          &sImages))
          {
@@ -157,7 +159,7 @@ static bool PVRImageDrawableGetNativeInfo(PVRDRIDrawable *psPVRDrawable)
  *//**************************************************************************/
 static bool PVRImageDrawableCreate(PVRDRIDrawable *psPVRDrawable)
 {
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
    uint32_t uBytesPerPixel;
    PVRDRIBufferAttribs sBufferAttribs;
 
@@ -201,7 +203,7 @@ static bool PVRImageDrawableCreate(PVRDRIDrawable *psPVRDrawable)
  *//**************************************************************************/
 static bool PVRImageDrawableRecreate(PVRDRIDrawable *psPVRDrawable)
 {
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
    PVRDRIBuffer *psPVRDRIBuffer;
    uint32_t uBytesPerPixel;
    PVRDRIBufferAttribs sBufferAttribs;
@@ -324,8 +326,8 @@ static bool PVRImageObjectCacheCompare(void *pvCreateData,
  ************************************************************************************/
 static bool PVRDRI2DrawableGetNativeInfo(PVRDRIDrawable *psPVRDrawable)
 {
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
-   __DRIscreen *psDRIScreen = psPVRDrawable->psPVRScreen->psDRIScreen;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
+   struct dri_screen *psDRIScreen = dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen);
    unsigned int auiAttachmentReq[2];
    __DRIbuffer *psDRIBuffers;
    int iBufCount;
@@ -347,7 +349,7 @@ static bool PVRDRI2DrawableGetNativeInfo(PVRDRIDrawable *psPVRDrawable)
    auiAttachmentReq[1] = PVRDRIPixFmtGetDepth(psPVRDrawable->ePixelFormat);
 
    /* Do not free psDRIBuffers when finished with it */
-   psDRIBuffers = psDRIScreen->dri2.loader->getBuffersWithFormat(psDRIDrawable,
+   psDRIBuffers = psDRIScreen->dri2.loader->getBuffersWithFormat(psPVRDrawable->psDRIDrawable,
          &w,
          &h,
          &auiAttachmentReq[0],
@@ -391,7 +393,7 @@ static bool PVRDRI2DrawableGetNativeInfo(PVRDRIDrawable *psPVRDrawable)
  ************************************************************************************/
 static bool PVRDRI2DrawableCreate(PVRDRIDrawable *psPVRDrawable)
 {
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
 
    if (!PVRDRI2DrawableGetNativeInfo(psPVRDrawable))
          {
@@ -427,7 +429,7 @@ static bool PVRDRI2DrawableCreate(PVRDRIDrawable *psPVRDrawable)
  ************************************************************************************/
 static bool PVRDRI2DrawableRecreate(PVRDRIDrawable *psPVRDrawable)
 {
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
    PVRDRIBuffer *psPVRDRIBuffer;
    bool bRecreate;
 
@@ -488,7 +490,7 @@ static bool PVRDRI2DrawableRecreate(PVRDRIDrawable *psPVRDrawable)
 static void* PVRDRI2ObjectCacheInsert(void *pvCreateData, void *pvInsertData)
 {
    PVRDRIDrawable *psPVRDrawable = pvCreateData;
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
    PVRDRIScreen *psPVRScreen = psPVRDrawable->psPVRScreen;
    PVRDRIBuffer *psPVRDRIBuffer;
    __DRIbuffer *psDRIBuffer = pvInsertData;
@@ -568,7 +570,7 @@ static bool PVRDRI2ObjectCacheCompare(void *pvCreateData,
  ************************************************************************************/
 bool PVRDRIDrawableUpdateNativeInfo(PVRDRIDrawable *psPVRDrawable)
 {
-   return (psPVRDrawable->psPVRScreen->psDRIScreen->image.loader) ?
+   return (dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen)->image.loader) ?
                                                                     PVRImageDrawableGetNativeInfo(psPVRDrawable) :
                                                                     PVRDRI2DrawableGetNativeInfo(psPVRDrawable);
 }
@@ -602,7 +604,7 @@ bool PVRDRIDrawableRecreate(PVRDRIDrawable *psPVRDrawable)
       }
    }
 
-   if (psPVRDrawable->psPVRScreen->psDRIScreen->image.loader)
+   if (dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen)->image.loader)
    {
       bRes = PVRImageDrawableRecreate(psPVRDrawable);
    }
@@ -631,7 +633,7 @@ static bool PVRDRIDrawableCreate(PVRDRIDrawable *psPVRDrawable)
 {
    bool bRes;
 
-   if (psPVRDrawable->psPVRScreen->psDRIScreen->image.loader)
+   if (dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen)->image.loader)
    {
       bRes = PVRImageDrawableCreate(psPVRDrawable);
    }
@@ -658,7 +660,7 @@ bool PVRDRIDrawableInit(PVRDRIDrawable *psPVRDrawable)
       return true;
    }
 
-   if (psPVRDrawable->psPVRScreen->psDRIScreen->image.loader)
+   if (dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen)->image.loader)
    {
       pfnInsert = PVRImageObjectCacheInsert;
       pfnPurge = PVRImageObjectCachePurge;
@@ -666,7 +668,7 @@ bool PVRDRIDrawableInit(PVRDRIDrawable *psPVRDrawable)
    }
    else
    {
-      assert(psPVRDrawable->psPVRScreen->psDRIScreen->dri2.loader);
+      assert(dri_screen(psPVRDrawable->psPVRScreen->psDRIScreen)->dri2.loader);
 
       pfnInsert = PVRDRI2ObjectCacheInsert;
       pfnPurge = PVRDRI2ObjectCachePurge;
@@ -718,7 +720,7 @@ bool PVRDRIDrawableGetParameters(PVRDRIDrawable *psPVRDrawable,
       PVRDRIBufferAttribs *psAttribs,
       bool *pbDoubleBuffered)
 {
-   __DRIdrawable *psDRIDrawable = psPVRDrawable->psDRIDrawable;
+   struct dri_drawable *psDRIDrawable = dri_drawable(psPVRDrawable->psDRIDrawable);
    PVRDRIBuffer *psPVRDRIBuffer;
    PVRDRIBufferImpl *psDstBuffer;
 

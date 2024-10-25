@@ -62,6 +62,9 @@
 #include <xf86drm.h>
 
 #include "dri_util.h"
+#include "dri_context.h"
+#include "dri_drawable.h"
+#include "dri_screen.h"
 
 #include "sgx_support.h"
 #include "sgx_dri.h"
@@ -85,8 +88,8 @@ static void
 PVRDRIExtSetTexBuffer(__DRIcontext *psDRIContext, GLint iTarget,
                       GLint iFormat, __DRIdrawable *psDRIDrawable)
 {
-   PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
-   PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+   PVRDRIDrawable *psPVRDrawable = dri_drawable(psDRIDrawable)->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(psDRIContext)->driverPrivate;
 
    (void) iTarget;
    (void) iFormat;
@@ -130,8 +133,8 @@ static void
 PVRDRIExtReleaseTexBuffer(__DRIcontext *psDRIContext, GLint iTarget,
                           __DRIdrawable *psDRIDrawable)
 {
-   PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
-   PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+   PVRDRIDrawable *psPVRDrawable = dri_drawable(psDRIDrawable)->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(psDRIContext)->driverPrivate;
 
    (void) iTarget;
 
@@ -154,7 +157,7 @@ static __DRItexBufferExtension pvrDRITexBufferExtension = {
 static void
 PVRDRI2Flush(__DRIdrawable *psDRIDrawable)
 {
-   PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
+   PVRDRIDrawable *psPVRDrawable = dri_drawable(psDRIDrawable)->driverPrivate;
 
    PVRDRIDrawableLock(psPVRDrawable);
 
@@ -171,7 +174,7 @@ PVRDRI2Flush(__DRIdrawable *psDRIDrawable)
 static void
 PVRDRI2Invalidate(__DRIdrawable *psDRIDrawable)
 {
-   PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
+   PVRDRIDrawable *psPVRDrawable = dri_drawable(psDRIDrawable)->driverPrivate;
 
    if (psPVRDrawable->psPVRScreen->bUseInvalidate) {
       PVRDRIDrawableLock(psPVRDrawable);
@@ -187,12 +190,12 @@ PVRDRI2FlushWithFlags(__DRIcontext *psDRIContext,
                       unsigned int uFlags,
                       enum __DRI2throttleReason eThrottleReason)
 {
-   PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(psDRIContext)->driverPrivate;
 
    (void) eThrottleReason;
 
    if ((uFlags & __DRI2_FLUSH_DRAWABLE) != 0) {
-      PVRDRIDrawable *psPVRDrawable = psDRIDrawable->driverPrivate;
+      PVRDRIDrawable *psPVRDrawable = dri_drawable(psDRIDrawable)->driverPrivate;
 
       PVRDRIDrawableLock(psPVRDrawable);
 
@@ -261,7 +264,7 @@ CommonImageSharedSetup(PVRDRIImageType eType,
       return NULL;
    }
 
-   shared->psPVRScreen = screen->driverPrivate;
+   shared->psPVRScreen = dri_screen(screen)->driverPrivate;
    shared->eType = eType;
    shared->iRefCount = 1;
 
@@ -679,7 +682,7 @@ PVRDRICreateImageFromRenderbuffer(__DRIcontext *context,
                                               void         *loaderPrivate)
 {
    struct PVRDRIImage *pvr_image;
-   PVRDRIContext *psPVRContext = context->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(context)->driverPrivate;
    __DRIscreen *screen = psPVRContext->psPVRScreen->psDRIScreen;
    unsigned e;
    __EGLImage *psEGLImage;
@@ -881,6 +884,7 @@ static __DRIimage *
 PVRDRIDupImage(__DRIimage *srcImage, void *loaderPrivate)
 {
    struct PVRDRIImage *pvr_image;
+   struct PVRDRIImage *src_pvr_image;
    __DRIimage *image;
 
    image = CommonImageSetup(loaderPrivate);
@@ -893,7 +897,7 @@ PVRDRIDupImage(__DRIimage *srcImage, void *loaderPrivate)
    src_pvr_image = srcImage->driverPrivate;
    pvr_image->psShared = RefImageShared(src_pvr_image->psShared);
 
-   pvr_image->psEGLImage = PVRDRIEGLImageDup(srcImage->psEGLImage);
+   pvr_image->psEGLImage = PVRDRIEGLImageDup(src_pvr_image->psEGLImage);
    if (!pvr_image->psEGLImage)
    {
       PVRDRIDestroyImage(image);
@@ -909,7 +913,7 @@ static GLboolean
 PVRDRIValidateUsage(__DRIimage *image, unsigned int use)
 {
    struct PVRDRIImage *pvr_image = image->driverPrivate;
-   __DRIscreen *screen = pvr_image->psShared->psPVRScreen->psDRIScreen;
+   struct dri_screen *screen = dri_screen(pvr_image->psShared->psPVRScreen->psDRIScreen);
 
    if (use & (__DRI_IMAGE_USE_SCANOUT | __DRI_IMAGE_USE_CURSOR)) {
       /*
@@ -1006,7 +1010,7 @@ PVRDRICreateImageFromTexture(__DRIcontext *context,
                              unsigned *error,
                              void *loaderPrivate)
 {
-   PVRDRIContext *psPVRContext = context->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(context)->driverPrivate;
    struct PVRDRIImage *pvr_image;
    __DRIscreen *screen = psPVRContext->psPVRScreen->psDRIScreen;
    __EGLImage *psEGLImage;
@@ -1121,7 +1125,7 @@ PVRDRICreateImageFromBuffer(__DRIcontext *context,
                             unsigned *error,
                             void *loaderPrivate)
 {
-   PVRDRIContext *psPVRContext = context->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(context)->driverPrivate;
    struct PVRDRIImage *pvr_image;
    __DRIscreen *screen = psPVRContext->psPVRScreen->psDRIScreen;
    __EGLImage *psEGLImage;
@@ -1291,16 +1295,18 @@ __EGLImage *PVRDRIImageGetEGLImage(__DRIimage *image)
 __DRIimage *PVRDRIScreenGetDRIImage(void *hEGLImage)
 {
    PVRDRIScreen *psPVRScreen = PVRDRIThreadGetCurrentScreen();
+   struct dri_screen *screen;
 
    if (!psPVRScreen)
    {
       return NULL;
    }
 
-   return psPVRScreen->psDRIScreen->dri2.image->lookupEGLImage(
+   screen = dri_screen(psPVRScreen->psDRIScreen);
+   return screen->dri2.image->lookupEGLImage(
          psPVRScreen->psDRIScreen,
          hEGLImage,
-         psPVRScreen->psDRIScreen->loaderPrivate);
+         screen->loaderPrivate);
 }
 
 static __DRIimageExtension pvrDRIImage = {
@@ -1344,7 +1350,7 @@ static __DRIpriorityExtension pvrDRIPriority = {
 static void *
 PVRDRICreateFenceEXT(__DRIcontext *psDRIContext)
 {
-   PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(psDRIContext)->driverPrivate;
    PVRDRIScreen *psPVRScreen = psPVRContext->psPVRScreen;
 
    return PVRDRICreateFenceImpl(psPVRContext->eAPI,
@@ -1370,7 +1376,7 @@ PVRDRIClientWaitSyncEXT(__DRIcontext *psDRIContext, void *psDRIFence,
    PVRDRIContextImpl *psImpl = NULL;
 
    if (psDRIContext) {
-      PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+      PVRDRIContext *psPVRContext = dri_context(psDRIContext)->driverPrivate;
 
       eAPI = psPVRContext->eAPI;
       psImpl = psPVRContext->psImpl;
@@ -1383,7 +1389,7 @@ static void
 PVRDRIServerWaitSyncEXT(__DRIcontext *psDRIContext, void *psDRIFence,
                         unsigned int uFlags)
 {
-   PVRDRIContext *psPVRContext = psDRIContext->driverPrivate;
+   PVRDRIContext *psPVRContext = dri_context(psDRIContext)->driverPrivate;
 
    (void) uFlags;
    assert(uFlags == 0);
