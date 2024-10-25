@@ -137,7 +137,6 @@ pvrdri_add_mesa_dispatch(struct _glapi_table *psTable, PVRDRIAPIType eAPI,
 			 const char *psFunc)
 {
    int iOffset;
-   const char *asFunc[] = {NULL, NULL};
    _glapi_proc pfFunc;
    const char *error;
 
@@ -160,8 +159,7 @@ pvrdri_add_mesa_dispatch(struct _glapi_table *psTable, PVRDRIAPIType eAPI,
       }
    }
 
-   asFunc[0] = psFunc;
-   iOffset = _glapi_add_dispatch(asFunc, "");
+   iOffset = _glapi_add_dispatch(psFunc);
    if (iOffset == -1) {
       _mesa_warning(NULL, "Couldn't add %s to the Mesa dispatch table",
                     psFunc);
