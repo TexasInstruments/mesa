@@ -339,6 +339,7 @@ dri_fill_in_modes(struct dri_screen *screen)
    unsigned i;
    struct pipe_screen *p_screen = screen->base.screen;
    bool mixed_color_depth;
+   bool accumulation_buffer;
    bool allow_rgba_ordering;
    bool allow_rgb10;
    bool allow_fp16;
@@ -377,6 +378,9 @@ dri_fill_in_modes(struct dri_screen *screen)
 
    mixed_color_depth =
       p_screen->caps.mixed_color_depth_bits;
+
+   accumulation_buffer =
+      p_screen->caps.accumulation_buffer;
 
    /* Add configs. */
    for (unsigned f = 0; f < ARRAY_SIZE(pipe_formats); f++) {
@@ -430,7 +434,7 @@ dri_fill_in_modes(struct dri_screen *screen)
                                         zs_formats, num_zs_formats,
                                         db_modes, ARRAY_SIZE(db_modes),
                                         msaa_modes, 1,
-                                        GL_TRUE, !mixed_color_depth);
+                                        accumulation_buffer, !mixed_color_depth);
          configs = driConcatConfigs(configs, new_configs);
 
          /* Multi-sample configs without an accumulation buffer. */
@@ -625,12 +629,20 @@ dri_init_screen(struct dri_screen *screen,
    dri_init_options(screen);
    dri_postprocessing_init(screen);
 
-   st_api_query_versions(&screen->base,
-                         &screen->options,
-                         &screen->max_gl_core_version,
-                         &screen->max_gl_compat_version,
-                         &screen->max_gl_es1_version,
-                         &screen->max_gl_es2_version);
+   if (pscreen->is_pvr)
+      pscreen->api_query_versions_pvr(pscreen,
+                                      &screen->options,
+                                      &screen->max_gl_core_version,
+                                      &screen->max_gl_compat_version,
+                                      &screen->max_gl_es1_version,
+                                      &screen->max_gl_es2_version);
+   else
+      st_api_query_versions(&screen->base,
+                            &screen->options,
+                            &screen->max_gl_core_version,
+                            &screen->max_gl_compat_version,
+                            &screen->max_gl_es1_version,
+                            &screen->max_gl_es2_version);
 
    screen->throttle = pscreen->caps.throttle;
    if (pscreen->caps.device_protected_context)

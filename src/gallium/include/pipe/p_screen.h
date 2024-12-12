@@ -38,11 +38,11 @@
 #define P_SCREEN_H
 
 
+#include "frontend/api.h"
 #include "util/compiler.h"
 #include "util/format/u_formats.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_video_enums.h"
-
 
 
 #ifdef __cplusplus
@@ -70,6 +70,15 @@ struct pipe_video_buffer;
 struct nir_shader;
 struct nir_shader_compiler_options;
 
+struct pipe_drawable;
+
+struct st_context_attribs;
+struct gl_config;
+
+struct dri_context;
+struct dri_drawable;
+struct dri_image;
+
 typedef struct pipe_vertex_state *
    (*pipe_create_vertex_state_func)(struct pipe_screen *screen,
                                     struct pipe_vertex_buffer *buffer,
@@ -95,6 +104,11 @@ struct pipe_screen {
    const struct pipe_caps caps;
    const struct pipe_shader_caps shader_caps[PIPE_SHADER_MESH_TYPES];
    const struct pipe_compute_caps compute_caps;
+
+   /**
+    * PVR screen.
+    */
+   bool is_pvr;
 
    /**
     * Get the fd associated with the screen
@@ -182,6 +196,103 @@ struct pipe_screen {
     */
    struct pipe_context * (*context_create)(struct pipe_screen *screen,
                                            void *priv, unsigned flags);
+
+   /**
+    * Create a PVR context.
+    * This is used instead of context_create by PVR screens.
+    *
+    * \param screen      pipe screen
+    * \param attribs     state tracker context attributes
+    * \param mode        GL config
+    * \param shared_ctx  shared context
+    * \param error       returned error code
+    */
+   struct pipe_context * (*context_create_pvr)(struct pipe_screen *screen,
+                                               struct dri_context *dctx,
+                                               const struct st_context_attribs *attribs,
+                                               const struct gl_config *mode,
+                                               struct pipe_context *shared_ctx,
+                                               enum st_context_error *error);
+
+   /**
+    * Flush a PVR context and/or drawable.
+    * \param ctx         pipe context
+    * \param drawable    pipe drawable
+    * \param flags       flush flags
+    * \param reason      throttle reason
+    */
+   void (*flush_pvr)(struct pipe_context *ctx,
+                     struct pipe_drawable *drawable,
+                     unsigned int flags,
+                     unsigned int reason);
+
+   /**
+    * Query PVR screen API versions.
+    * \param screen            pipe screen
+    * \param options           configuration options
+    * \param gl_core_version   OpenGL Core version
+    * \param gl_compat_version OpenGL Compatibility version
+    * \param gl_es1_version    OpenGL ES1 version
+    * \param gl_es2_version    OpenGL ES2/ES3 version
+    */
+   void (*api_query_versions_pvr)(struct pipe_screen *screen,
+                                  struct st_config_options *options,
+                                  int *gl_core_version,
+                                  int *gl_compat_version,
+                                  int *gl_es1_version,
+                                  int *gl_es2_version);
+
+   /**
+    * Get the current DRI context.
+    * This is only used for PVR screens and contexts.
+    *
+    * \param screen      pipe screen
+    */
+   struct dri_context * (*get_current_dri_context)(struct pipe_screen *screen);
+
+   /**
+    * Set DRI Image parameters for a PVR screen.
+    * \param screen                  pipe screen
+    * \param loader_private          DRI screen loader private
+    * \param validateEGLImage        DRI image lookup extension
+    * \param lookupEGLImageValidated DRI image lookup extension
+    * \param resource_from_image     Get the pipe_resource for an image
+    */
+   void (*set_dri_image_params)(struct pipe_screen *screen,
+                                void *loader_private,
+                                unsigned char (*validateEGLImage)(void *image, void *loaderPrivate),
+                                struct dri_image *(*lookupEGLImageValidated)(void *image, void *loaderPrivate),
+                                struct pipe_resource *(*resource_from_image)(struct dri_image *));
+
+   /** Create a resource from FDs. Used by PVR screens.
+    * \param screen                  pipe screen
+    * \param templat                 pipe resouce template
+    * \param modifier                DRM format modifier
+    * \param fds                     FD array
+    * \params num_fds                Number of FDs
+    * \params strides                Array of plane strides
+    * \params offset                 Array of plane offsets
+    * \params yuv_color_space        DRI YUV Color space
+    * \params sample_range           DRI YUV sample range
+    * \params horizontal_siting      DRI YUV horizontal chroma siting
+    * \params veritcal_siting        DRI YUV vertical chroma site
+    */
+   struct pipe_resource *(*resource_from_fds)(struct pipe_screen *pscreen,
+                                              const struct pipe_resource *templat,
+                                              uint64_t modifier,
+                                              int *fds, int num_fds,
+                                              int *strides, int *offsets,
+                                              unsigned int yuv_color_space,
+                                              unsigned int sample_range,
+                                              unsigned int horizontal_siting,
+                                              unsigned int vertical_siting);
+
+   /** Create a fence from an OpenCL event. Used by PVR screens.
+    * \param screen                  pipe screen
+    * \param cl_event                OpenCL event
+    */
+   void *(*get_fence_from_cl_event)(struct pipe_screen *pscreen,
+                                    intptr_t cl_event);
 
    /**
     * Check if the given image copy will be faster on compute
@@ -860,6 +971,25 @@ struct pipe_screen {
     * is used.
     */
    struct pipe_screen* (*get_driver_pipe_screen)(struct pipe_screen *screen);
+
+   /**
+    * PVR specific drawable creation.
+    */
+   struct pipe_drawable *(*drawable_create)(struct pipe_screen *screen,
+                                            struct dri_drawable *drawable,
+                                            const struct gl_config *visual,
+                                            bool isPixmap,
+                                            void (*drawable_ref)(struct dri_drawable *drawable),
+                                            void (*drawable_unref)(struct dri_drawable *drawable),
+                                            bool (*dri_framebuffer_validate)(struct dri_context *ctx,
+                                                                             struct dri_drawable *drawable,
+                                                                             const enum st_attachment_type *statts,
+                                                                             unsigned count,
+                                                                             struct pipe_resource **out,
+                                                                             struct pipe_resource **resolve),
+                                            bool (*dri_flush_frontbuffer)(struct dri_context *ctx,
+                                                                          struct dri_drawable *drawable,
+                                                                          enum st_attachment_type statt));
 };
 
 

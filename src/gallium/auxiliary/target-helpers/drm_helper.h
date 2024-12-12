@@ -51,6 +51,7 @@ const struct drm_driver_descriptor descriptor_name = {         \
 #undef GALLIUM_PANFROST
 #undef GALLIUM_LIMA
 #undef GALLIUM_ASAHI
+#undef GALLIUM_PVR
 #endif
 
 #ifdef GALLIUM_I915
@@ -410,6 +411,26 @@ DRM_DRIVER_DESCRIPTOR(lima, lima_driconf, ARRAY_SIZE(lima_driconf))
 DRM_DRIVER_DESCRIPTOR_STUB(lima)
 #endif
 
+#ifdef GALLIUM_PVR
+#include "pvr/ddk/pvr_ddk_public.h"
+
+static struct pipe_screen *
+pipe_pvr_create_screen(int fd, const struct pipe_screen_config *config)
+{
+   struct pipe_screen *screen;
+
+   screen =  pvr_ddk_screen_create_renderonly(fd, NULL, config);
+   return screen ? debug_screen_wrap(screen) : NULL;
+}
+
+const driOptionDescription pvr_driconf[] = {
+      #include "pvr/driinfo_pvr.h"
+};
+DRM_DRIVER_DESCRIPTOR(pvr, pvr_driconf, ARRAY_SIZE(pvr_driconf))
+#else
+DRM_DRIVER_DESCRIPTOR_STUB(pvr)
+#endif
+
 #ifdef GALLIUM_ZINK
 #include "zink/zink_public.h"
 
@@ -456,6 +477,9 @@ const driOptionDescription kmsro_driconf[] = {
 #endif
 #ifdef GALLIUM_LIMA
       #include "lima/driinfo_lima.h"
+#endif
+#ifdef GALLIUM_PVR
+      #include "pvr/driinfo_pvr.h"
 #endif
 };
 DRM_DRIVER_DESCRIPTOR(kmsro, kmsro_driconf, ARRAY_SIZE(kmsro_driconf))

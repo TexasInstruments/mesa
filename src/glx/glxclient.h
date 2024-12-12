@@ -112,6 +112,7 @@ struct __GLXDRIscreenRec {
    int (*setSwapInterval)(__GLXDRIdrawable *pdraw, int interval);
    int (*getSwapInterval)(__GLXDRIdrawable *pdraw);
    void (*bindTexImage)(__GLXDRIdrawable *pdraw, int buffer, const int *attribs);
+   void (*releaseTexImage)(__GLXDRIdrawable *pdraw, int buffer);
 
    int maxSwapInterval;
 };

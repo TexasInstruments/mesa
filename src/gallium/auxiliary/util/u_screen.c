@@ -187,6 +187,11 @@ u_init_pipe_screen_caps(struct pipe_screen *pscreen, int accel)
 
    caps->min_vma =
    caps->max_vma = 0;
+
+   caps->accumulation_buffer = true;
+   caps->mesa_gl_interop = true;
+   caps->context_no_error = true;
+   caps->image_dmabuf_export = true;
 }
 
 uint64_t u_default_get_timestamp(UNUSED struct pipe_screen *screen)

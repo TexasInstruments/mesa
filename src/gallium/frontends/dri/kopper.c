@@ -519,7 +519,7 @@ kopper_destroy_drawable(struct dri_drawable *drawable)
 int64_t
 kopperSwapBuffersWithDamage(struct dri_drawable *drawable, uint32_t flush_flags, int nrects, const int *rects)
 {
-   struct dri_context *ctx = dri_get_current();
+   struct dri_context *ctx = dri_get_current(drawable->screen);
    struct pipe_resource *ptex;
 
    if (!ctx)
@@ -613,7 +613,7 @@ kopperSetSwapInterval(struct dri_drawable *drawable, int interval)
 int
 kopperQueryBufferAge(struct dri_drawable *drawable)
 {
-   struct dri_context *ctx = dri_get_current();
+   struct dri_context *ctx = dri_get_current(drawable->screen);
    struct pipe_resource *ptex = drawable->textures[ST_ATTACHMENT_BACK_LEFT] ?
                                 drawable->textures[ST_ATTACHMENT_BACK_LEFT] :
                                 drawable->textures[ST_ATTACHMENT_FRONT_LEFT];

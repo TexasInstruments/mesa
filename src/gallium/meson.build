@@ -185,6 +185,12 @@ if with_gallium_lima
 else
   driver_lima = declare_dependency()
 endif
+if with_gallium_pvr
+  subdir('winsys/pvr/ddk')
+  subdir('drivers/pvr')
+else
+  driver_pvr = declare_dependency()
+endif
 if with_gallium_zink
   subdir('drivers/zink')
 else

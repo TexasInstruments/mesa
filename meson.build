@@ -182,7 +182,7 @@ elif gallium_drivers.contains('all')
    gallium_drivers = [
      'r300', 'r600', 'radeonsi', 'crocus', 'v3d', 'vc4', 'freedreno', 'etnaviv', 'i915',
      'nouveau', 'svga', 'tegra', 'virgl', 'lima', 'panfrost', 'llvmpipe', 'softpipe', 'iris',
-     'zink', 'd3d12', 'asahi'
+     'zink', 'd3d12', 'asahi', 'pvr'
    ]
 endif
 
@@ -209,6 +209,7 @@ with_gallium_lima = gallium_drivers.contains('lima')
 with_gallium_zink = gallium_drivers.contains('zink')
 with_gallium_d3d12 = gallium_drivers.contains('d3d12')
 with_gallium_asahi = gallium_drivers.contains('asahi')
+with_gallium_pvr = gallium_drivers.contains('pvr')
 foreach gallium_driver : gallium_drivers
   pre_args += '-DHAVE_@0@'.format(gallium_driver.to_upper())
 endforeach
@@ -230,6 +231,7 @@ with_gallium_kmsro = system_has_kms_drm and [
   with_gallium_freedreno,
   with_gallium_lima,
   with_gallium_panfrost,
+  with_gallium_pvr,
   with_gallium_v3d,
   with_gallium_vc4,
 ].contains(true)

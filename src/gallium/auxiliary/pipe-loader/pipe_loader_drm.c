@@ -304,6 +304,9 @@ pipe_loader_get_compatible_render_capable_device_fds(int kms_only_fd, unsigned i
       "panfrost",
       "panthor",
 #endif
+#if defined GALLIUM_PVR
+      "pvr",
+#endif
 #if defined GALLIUM_V3D
       "v3d",
 #endif

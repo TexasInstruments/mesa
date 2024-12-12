@@ -41,6 +41,10 @@ struct pipe_context;
 struct dri_context;
 struct dri_screen;
 
+struct gl_config;
+
+struct pipe_drawable;
+
 struct dri_drawable
 {
    struct pipe_frontend_drawable base;
@@ -121,6 +125,9 @@ struct dri_drawable
 
    void (*swap_buffers)(struct dri_drawable *drawable);
    void (*swap_buffers_with_damage)(struct dri_drawable *drawable, int nrects, const int *rects);
+
+   /* PVR drawable data */
+   struct pipe_drawable *pipe;
 };
 
 static inline void
@@ -164,10 +171,21 @@ void
 kopper_init_drawable(struct dri_drawable *drawable, bool isPixmap, int alphaBits);
 void
 drisw_init_drawable(struct dri_drawable *drawable, bool isPixmap, int alphaBits);
-void
-dri2_init_drawable(struct dri_drawable *drawable, bool isPixmap, int alphaBits);
+bool
+dri2_init_drawable(struct dri_drawable *drawable, bool isPixmap, const struct gl_config *visual);
+
 void
 kopper_destroy_drawable(struct dri_drawable *drawable);
+void
+dri2_destroy_drawable(struct dri_drawable *drawable);
+
+bool
+dri_framebuffer_validate(struct dri_context *ctx,
+                         struct dri_drawable *drawable,
+                         const enum st_attachment_type *statts,
+                         unsigned count,
+                         struct pipe_resource **out,
+                         struct pipe_resource **resolve);
 #endif
 
 /* vim: set sw=3 ts=8 sts=3 expandtab: */

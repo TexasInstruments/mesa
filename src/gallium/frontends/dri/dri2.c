@@ -59,6 +59,8 @@
 
 #include "drm-uapi/drm_fourcc.h"
 
+#include "pipe/p_drawable.h"
+
 struct dri2_buffer
 {
    __DRIbuffer base;
@@ -197,10 +199,12 @@ dri2_allocate_textures(struct dri_context *ctx,
    /* Image specific variables */
    struct __DRIimageList images;
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(ctx->st->ctx);
+   if (ctx->st) {
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(ctx->st->ctx);
+   }
 
    /* First get the buffers from the loader */
    assert(image);
@@ -212,7 +216,7 @@ dri2_allocate_textures(struct dri_context *ctx,
 
    /* See if we need a depth-stencil buffer. */
    for (i = 0; i < statts_count; i++) {
-      if (statts[i] == ST_ATTACHMENT_DEPTH_STENCIL) {
+      if (statts[i] == ST_ATTACHMENT_DEPTH_STENCIL && ctx->st) {
          alloc_depthstencil = true;
          break;
       }
@@ -228,14 +232,14 @@ dri2_allocate_textures(struct dri_context *ctx,
        * see what the driver has rendered.
        */
       if (i != ST_ATTACHMENT_DEPTH_STENCIL && drawable->textures[i]) {
-         struct pipe_context *pipe = ctx->st->pipe;
+         struct pipe_context *pipe = ctx->st ? ctx->st->pipe : ctx->pipe;
          pipe->flush_resource(pipe, drawable->textures[i]);
       }
 
       pipe_resource_reference(&drawable->textures[i], NULL);
    }
 
-   if (drawable->stvis.samples > 1) {
+   if (drawable->stvis.samples > 1 && ctx->st) {
       for (i = 0; i < ST_ATTACHMENT_COUNT; i++) {
          bool del = true;
 
@@ -309,7 +313,7 @@ dri2_allocate_textures(struct dri_context *ctx,
    templ.height0 = drawable->h;
 
    /* Allocate private MSAA colorbuffers. */
-   if (drawable->stvis.samples > 1) {
+   if (drawable->stvis.samples > 1 && ctx->st) {
       for (i = 0; i < statts_count; i++) {
          enum st_attachment_type statt = statts[i];
 
@@ -410,7 +414,6 @@ dri2_flush_frontbuffer(struct dri_context *ctx,
    const __DRIimageLoaderExtension *image = drawable->screen->image.loader;
    const __DRImutableRenderBufferLoaderExtension *shared_buffer_loader =
       drawable->screen->mutableRenderBuffer.loader;
-   struct pipe_context *pipe = ctx->st->pipe;
    struct pipe_fence_handle *fence = NULL;
    int fence_fd = -1;
 
@@ -418,36 +421,51 @@ dri2_flush_frontbuffer(struct dri_context *ctx,
     * front buffer at the GL API level, or when EGL_KHR_mutable_render_buffer
     * has redirected GL_BACK to the front buffer.
     */
-   if (statt != ST_ATTACHMENT_FRONT_LEFT &&
-       (!ctx->is_shared_buffer_bound || statt != ST_ATTACHMENT_BACK_LEFT))
+   if (statt != ST_ATTACHMENT_FRONT_LEFT && (!ctx ||
+       !ctx->is_shared_buffer_bound || statt != ST_ATTACHMENT_BACK_LEFT))
          return false;
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(ctx->st->ctx);
+   if (ctx) {
+      struct pipe_context *pipe = ctx->st ? ctx->st->pipe : ctx->pipe;
 
-   if (drawable->stvis.samples > 1) {
-      /* Resolve the buffer used for front rendering. */
-      dri_pipe_blit(ctx->st->pipe, drawable->textures[statt],
+      if(ctx->st) {
+         /* Wait for glthread to finish because we can't use pipe_context from
+          * multiple threads.
+          */
+         _mesa_glthread_finish(ctx->st->ctx);
+      }
+
+      if (drawable->stvis.samples > 1 && ctx->st) {
+         /* Resolve the buffer used for front rendering. */
+         dri_pipe_blit(ctx->st->pipe, drawable->textures[statt],
                     drawable->msaa_textures[statt]);
-   }
+      }
 
-   if (drawable->textures[statt]) {
-      pipe->flush_resource(pipe, drawable->textures[statt]);
-   }
+      if (drawable->textures[statt]) {
+         pipe->flush_resource(pipe, drawable->textures[statt]);
+      }
 
-   if (ctx->is_shared_buffer_bound) {
-      /* is_shared_buffer_bound should only be true with image extension: */
-      assert(image);
-      pipe->flush(pipe, &fence, PIPE_FLUSH_FENCE_FD);
-   } else {
-      pipe->flush(pipe, NULL, 0);
+      if (ctx->is_shared_buffer_bound) {
+         /* is_shared_buffer_bound should only be true with image extension: */
+         assert(image);
+         if (ctx->st) {
+            pipe->flush(pipe, &fence, PIPE_FLUSH_FENCE_FD);
+         } else {
+            pipe->screen->flush_pvr(pipe, drawable->pipe,
+                                    __DRI2_FLUSH_DRAWABLE | __DRI2_FLUSH_CONTEXT,
+                                    0);
+            pipe->create_fence_fd(pipe, &fence, -1, PIPE_FD_TYPE_NATIVE_SYNC);
+         }
+      } else {
+         pipe->flush(pipe, NULL, 0);
+      }
    }
 
    if (image) {
       image->flushFrontBuffer(drawable, drawable->loaderPrivate);
-      if (ctx->is_shared_buffer_bound) {
+      if (ctx && ctx->is_shared_buffer_bound) {
+         struct pipe_context *pipe = ctx->st ? ctx->st->pipe : ctx->pipe;
+
          if (fence)
             fence_fd = pipe->screen->fence_get_fd(pipe->screen, fence);
 
@@ -859,6 +877,80 @@ dri_create_image_from_winsys(struct dri_screen *screen,
    img->in_fence_fd = -1;
    img->loader_private = loaderPrivate;
    img->screen = screen;
+
+   return img;
+}
+
+static struct dri_image *
+dri_create_image_from_fds(struct dri_screen *screen,
+                          int width, int height,
+                          const struct dri2_format_mapping *map,
+                          uint64_t modifier, int *fds, int num_fds,
+                          int *strides, int *offsets,
+                          enum __DRIYUVColorSpace yuv_color_space,
+                          enum __DRISampleRange sample_range,
+                          enum __DRIChromaSiting horizontal_siting,
+                          enum __DRIChromaSiting vertical_siting,
+                          uint32_t bind, void *loaderPrivate)
+{
+   struct pipe_screen *pscreen = screen->base.screen;
+   unsigned tex_usage = 0;
+   struct dri_image *img;
+   struct pipe_resource templ;
+   struct pipe_resource *tex;
+
+   if (pscreen->is_format_supported(pscreen, map->pipe_format, screen->target,
+                                    0, 0, PIPE_BIND_RENDER_TARGET))
+      tex_usage |= PIPE_BIND_RENDER_TARGET;
+   if (pscreen->is_format_supported(pscreen, map->pipe_format, screen->target,
+                                    0, 0, PIPE_BIND_SAMPLER_VIEW))
+      tex_usage |= PIPE_BIND_SAMPLER_VIEW;
+
+   if (!tex_usage)
+      return NULL;
+
+   img = CALLOC_STRUCT(dri_image);
+   if (!img)
+      return NULL;
+
+   memset(&templ, 0, sizeof(templ));
+   templ.bind = tex_usage | bind;
+   templ.target = screen->target;
+   templ.last_level = 0;
+   templ.depth0 = 1;
+   templ.array_size = 1;
+   templ.width0 = width;
+   templ.height0 = height;
+   templ.format = map->pipe_format;
+
+   tex = pscreen->resource_from_fds(pscreen, &templ,
+                                    modifier, fds, num_fds,
+                                    strides, offsets,
+                                    yuv_color_space, sample_range,
+                                    horizontal_siting, vertical_siting);
+   if (!tex) {
+      FREE(img);
+      return NULL;
+   }
+
+   img->texture = tex;
+   img->level = 0;
+   img->layer = 0;
+   img->use = 0;
+   img->in_fence_fd = -1;
+   img->loader_private = loaderPrivate;
+   img->screen = screen;
+
+   /* Reject image creation if there's an inconsistency between
+    * content protection status of tex and img.
+    */
+   const struct driOptionCache *optionCache = &screen->dev->option_cache;
+   if (driQueryOptionb(optionCache, "force_protected_content_check") &&
+       (tex->bind & PIPE_BIND_PROTECTED) != (bind & PIPE_BIND_PROTECTED)) {
+      pipe_resource_reference(&img->texture, NULL);
+      FREE(img);
+      return NULL;
+   }
 
    return img;
 }
@@ -1354,6 +1446,7 @@ dri2_from_dma_bufs(struct dri_screen *screen,
 {
    struct dri_image *img;
    const struct dri2_format_mapping *map = dri2_get_mapping_by_fourcc(fourcc);
+   struct pipe_screen *pscreen = screen->base.screen;
 
    if (!screen->dmabuf_import) {
       if (error)
@@ -1384,27 +1477,37 @@ dri2_from_dma_bufs(struct dri_screen *screen,
       goto exit;
    }
 
-   struct winsys_handle whandles[4];
-   memset(whandles, 0, sizeof(whandles));
+   if (pscreen->is_pvr) {
+      img = dri_create_image_from_fds(screen,
+                                      width, height, map,
+                                      modifier, fds, num_fds,
+                                      strides, offsets,
+                                      yuv_color_space, sample_range,
+                                      horizontal_siting, vertical_siting,
+                                      flags, loaderPrivate);
+   } else {
+      struct winsys_handle whandles[4];
+      memset(whandles, 0, sizeof(whandles));
 
-   for (int i = 0; i < num_fds; i++) {
-      if (fds[i] < 0) {
-         err = __DRI_IMAGE_ERROR_BAD_ALLOC;
-         goto exit;
+      for (int i = 0; i < num_fds; i++) {
+         if (fds[i] < 0) {
+            err = __DRI_IMAGE_ERROR_BAD_ALLOC;
+            goto exit;
+         }
+
+         whandles[i].type = WINSYS_HANDLE_TYPE_FD;
+         whandles[i].handle = (unsigned)fds[i];
+         whandles[i].stride = (unsigned)strides[i];
+         whandles[i].offset = (unsigned)offsets[i];
+         whandles[i].format = map->pipe_format;
+         whandles[i].modifier = modifier;
+         whandles[i].plane = i;
       }
 
-      whandles[i].type = WINSYS_HANDLE_TYPE_FD;
-      whandles[i].handle = (unsigned)fds[i];
-      whandles[i].stride = (unsigned)strides[i];
-      whandles[i].offset = (unsigned)offsets[i];
-      whandles[i].format = map->pipe_format;
-      whandles[i].modifier = modifier;
-      whandles[i].plane = i;
+      img = dri_create_image_from_winsys(screen, width, height, map,
+                                          num_fds, whandles, flags,
+                                          loaderPrivate);
    }
-
-   img = dri_create_image_from_winsys(screen, width, height, map,
-                                       num_fds, whandles, flags,
-                                       loaderPrivate);
    if (img == NULL) {
       err = __DRI_IMAGE_ERROR_BAD_ALLOC;
       goto exit;
@@ -1482,13 +1585,25 @@ dri2_blit_image(struct dri_context *ctx, struct dri_image *dst, struct dri_image
                 int srcx0, int srcy0, int srcwidth, int srcheight,
                 int flush_flag)
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct pipe_context *pipe;
    struct pipe_screen *screen;
    struct pipe_fence_handle *fence;
    struct pipe_blit_info blit;
 
    if (!dst || !src)
       return;
+
+   if (!ctx->st) {
+      pipe = ctx->pipe;
+
+      return pipe->blit_image(pipe,
+                              dst->texture, src->texture,
+                              dstx0, dsty0, dstwidth, dstheight,
+                              srcx0, srcy0, srcwidth, srcheight,
+                              flush_flag);
+   }
+
+   pipe = ctx->st->pipe;
 
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
@@ -1534,22 +1649,29 @@ dri2_map_image(struct dri_context *ctx, struct dri_image *image,
                 int x0, int y0, int width, int height,
                 unsigned int flags, int *stride, void **data)
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct pipe_context *pipe;
    enum pipe_map_flags pipe_access = 0;
    struct pipe_transfer *trans;
    void *map;
 
-   if (!image || !data || *data)
+   if (!image || !data)
       return NULL;
 
    unsigned plane = image->plane;
    if (plane >= dri2_get_mapping_by_format(image->dri_format)->nplanes)
       return NULL;
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(ctx->st->ctx);
+   if (ctx->st) {
+      pipe = ctx->st->pipe;
+
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(ctx->st->ctx);
+   } else {
+      pipe = ctx->pipe;
+   }
+
 
    dri_image_fence_sync(ctx, image);
 
@@ -1575,12 +1697,18 @@ dri2_map_image(struct dri_context *ctx, struct dri_image *image,
 void
 dri2_unmap_image(struct dri_context *ctx, struct dri_image *image, void *data)
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct pipe_context *pipe;
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(ctx->st->ctx);
+   if (ctx->st) {
+      pipe = ctx->st->pipe;
+
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(ctx->st->ctx);
+   } else {
+      pipe = ctx->pipe;
+   }
 
    pipe_texture_unmap(pipe, (struct pipe_transfer *)data);
 }
@@ -1637,7 +1765,7 @@ dri_set_damage_region(struct dri_drawable *drawable, unsigned int nrects, int *r
       struct pipe_screen *screen = drawable->screen->base.screen;
       struct pipe_resource *resource;
 
-      if (drawable->stvis.samples > 1)
+      if (drawable->stvis.samples > 1 && !screen->is_pvr)
          resource = drawable->msaa_textures[ST_ATTACHMENT_BACK_LEFT];
       else
          resource = drawable->textures[ST_ATTACHMENT_BACK_LEFT];
@@ -1671,14 +1799,37 @@ dri_set_blob_cache_funcs(struct dri_screen *screen, __DRIblobCacheSet set,
 /*
  * Backend function init_screen.
  */
-
-void
-dri2_init_drawable(struct dri_drawable *drawable, bool isPixmap, int alphaBits)
+bool
+dri2_init_drawable(struct dri_drawable *drawable, bool isPixmap, const struct gl_config *visual)
 {
+   struct pipe_screen *pscreen = drawable->screen->base.screen;
+
    drawable->allocate_textures = dri2_allocate_textures;
    drawable->flush_frontbuffer = dri2_flush_frontbuffer;
    drawable->update_tex_buffer = dri2_update_tex_buffer;
    drawable->flush_swapbuffers = dri2_flush_swapbuffers;
+
+   if (pscreen->is_pvr) {
+      drawable->pipe =
+         pscreen->drawable_create(pscreen, drawable, visual, isPixmap,
+                                  dri_get_drawable, dri_put_drawable,
+                                  dri_framebuffer_validate,
+                                  dri2_flush_frontbuffer);
+      if (!drawable->pipe)
+         return false;
+   }
+
+   return true;
+}
+
+/*
+ * Backend function init_screen.
+ */
+void
+dri2_destroy_drawable(struct dri_drawable *drawable)
+{
+   if (drawable->pipe)
+      drawable->pipe->destroy(drawable->pipe);
 }
 
 /**
@@ -1694,8 +1845,15 @@ dri2_init_screen(struct dri_screen *screen, bool driver_name_is_inferred)
    screen->can_share_buffer = true;
 
 #ifdef HAVE_LIBDRM
-   if (pipe_loader_drm_probe_fd(&screen->dev, screen->fd, false))
+   if (pipe_loader_drm_probe_fd(&screen->dev, screen->fd, false)) {
       pscreen = pipe_loader_create_screen(screen->dev, driver_name_is_inferred);
+      if (pscreen && pscreen->is_pvr && screen->dri2.image)
+         pscreen->set_dri_image_params(pscreen,
+                                       screen->loaderPrivate,
+                                       screen->dri2.image->validateEGLImage,
+                                       screen->dri2.image->lookupEGLImageValidated,
+                                       pipe_resource_from_dri_image);
+   }
 #endif
 
    return pscreen;

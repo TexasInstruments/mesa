@@ -88,6 +88,7 @@ struct u_upload_mgr;
 struct util_debug_callback;
 struct u_vbuf;
 struct pipe_context;
+struct pipe_drawable;
 
 typedef void (*pipe_draw_func)(struct pipe_context *pipe,
                                const struct pipe_draw_info *info,
@@ -126,6 +127,28 @@ struct pipe_context {
    struct util_debug_callback debug;
 
    void (*destroy)(struct pipe_context *);
+
+   /**
+    * The following functions are only used by PVR drivers.
+    */
+   bool (*make_current)(struct pipe_context *,
+                        struct pipe_drawable *, struct pipe_drawable *);
+   void (*unbind)(struct pipe_context *);
+   struct pipe_resource *(*resource_from_texture)(struct pipe_context *,
+                          int target, unsigned int texture,
+                          int depth, int level, unsigned int *error);
+   struct pipe_resource *(*resource_from_renderbuffer)(struct pipe_context *,
+                          int renderbuffer, unsigned int *error);
+   void (*blit_image)(struct pipe_context *ctx,
+                      struct pipe_resource *dst, struct pipe_resource *src,
+                      int dstx0, int dsty0, int dstwidth, int dstheight,
+                      int srcx0, int srcy0, int srcwidth, int srcheight,
+                      int flush_flag);
+
+   void (*set_tex_buffer)(struct pipe_context *ctx, int target,
+                          int format, struct pipe_drawable *drawable);
+   void (*release_tex_buffer)(struct pipe_context *ctx, int target,
+                              struct pipe_drawable *drawable);
 
    /**
     * VBO drawing
@@ -823,6 +846,18 @@ struct pipe_context {
                            struct pipe_fence_handle **fence,
                            int fd,
                            enum pipe_fd_type type);
+
+   /**
+    * Create a fence.
+    *
+    * This is used by PVR drivers to create fences not associated
+    * with an FD.
+    *
+    * \param fence  if not NULL, an old fence to unref and transfer a
+    *    new fence reference to
+    */
+   void (*create_fence)(struct pipe_context *pipe,
+                        struct pipe_fence_handle **fence);
 
    /**
     * Insert commands to have GPU wait for fence to be signaled.

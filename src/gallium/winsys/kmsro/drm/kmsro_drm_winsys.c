@@ -33,6 +33,7 @@
 #include "panfrost/drm/panfrost_drm_public.h"
 #include "lima/drm/lima_drm_public.h"
 #include "asahi/drm/asahi_drm_public.h"
+#include "pvr/ddk/pvr_ddk_public.h"
 #include "xf86drm.h"
 
 #include "pipe/p_screen.h"
@@ -111,6 +112,11 @@ struct pipe_screen *kmsro_drm_screen_create(int kms_fd,
 #if defined(GALLIUM_PANFROST)
          ro->create_for_resource = panfrost_create_kms_dumb_buffer_for_resource;
          screen = panfrost_drm_screen_create_renderonly(ro->gpu_fd, ro, config);
+#endif
+      } else if (strcmp(render_dev_name, "pvr") == 0) {
+#if defined(GALLIUM_PVR)
+         ro->create_for_resource = pvr_create_kms_buffer_for_resource;
+         screen = pvr_ddk_screen_create_renderonly(ro->gpu_fd, ro, config);
 #endif
       } else if (strcmp(render_dev_name, "v3d") == 0) {
 #if defined(GALLIUM_V3D)

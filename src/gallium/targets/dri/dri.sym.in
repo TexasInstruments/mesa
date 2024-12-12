@@ -23,6 +23,7 @@
 		dri*indContext*;
 		driswCopySubBuffer;
 		dri_set_tex_buffer2;
+		dri_release_tex_buffer;
 		kopper*;
 		dri_query_renderer_string;
 		dri_query_renderer_integer;

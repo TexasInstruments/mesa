@@ -102,9 +102,6 @@ dri_create_context(struct dri_screen *screen,
                                                     : API_OPENGL_CORE;
       }
 
-      attribs.major = ctx_config->major_version;
-      attribs.minor = ctx_config->minor_version;
-
       if ((ctx_config->flags & __DRI_CTX_FLAG_FORWARD_COMPATIBLE) != 0)
 	 attribs.flags |= ST_CONTEXT_FLAG_FORWARD_COMPATIBLE;
       break;
@@ -112,6 +109,9 @@ dri_create_context(struct dri_screen *screen,
       *error = __DRI_CTX_ERROR_BAD_API;
       goto fail;
    }
+
+   attribs.major = ctx_config->major_version;
+   attribs.minor = ctx_config->minor_version;
 
    if ((ctx_config->flags & __DRI_CTX_FLAG_DEBUG) != 0)
       attribs.flags |= ST_CONTEXT_FLAG_DEBUG;
@@ -176,9 +176,17 @@ dri_create_context(struct dri_screen *screen,
 
    attribs.options = screen->options;
    dri_fill_st_visual(&attribs.visual, screen, visual);
-   ctx->st = st_api_create_context(&screen->base, &attribs, &ctx_err,
-				   st_share);
-   if (ctx->st == NULL) {
+   if (screen->base.screen->is_pvr)
+      ctx->pipe = screen->base.screen->context_create_pvr(screen->base.screen,
+                                                          ctx,
+                                                          &attribs,
+                                                          visual,
+                                                          share_ctx ? share_ctx->pipe : NULL,
+                                                          &ctx_err);
+   else
+      ctx->st = st_api_create_context(&screen->base, &attribs, &ctx_err,
+				      st_share);
+   if (ctx->pipe == NULL && ctx->st == NULL) {
       switch (ctx_err) {
       case ST_CONTEXT_SUCCESS:
 	 *error = __DRI_CTX_ERROR_SUCCESS;
@@ -189,55 +197,75 @@ dri_create_context(struct dri_screen *screen,
       case ST_CONTEXT_ERROR_BAD_VERSION:
 	 *error = __DRI_CTX_ERROR_BAD_VERSION;
 	 break;
+      case ST_CONTEXT_ERROR_BAD_API:
+	 *error = __DRI_CTX_ERROR_BAD_API;
+	 break;
+      case ST_CONTEXT_ERROR_BAD_FLAG:
+	 *error = __DRI_CTX_ERROR_BAD_FLAG;
+	 break;
+      case ST_CONTEXT_ERROR_UNKNOWN_ATTRIBUTE:
+	 *error = __DRI_CTX_ERROR_UNKNOWN_ATTRIBUTE;
+	 break;
+      case ST_CONTEXT_ERROR_UNKNOWN_FLAG:
+	 *error = __DRI_CTX_ERROR_UNKNOWN_FLAG;
+	 break;
       }
       goto fail;
    }
-   ctx->st->frontend_context = (void *) ctx;
 
-   if (ctx->st->cso_context) {
-      ctx->pp = pp_init(ctx->st->pipe, screen->pp_enabled, ctx->st->cso_context,
-                        ctx->st, st_context_invalidate_state);
-      ctx->hud = hud_create(ctx->st->cso_context,
-                            share_ctx ? share_ctx->hud : NULL,
-                            ctx->st, st_context_invalidate_state);
-   }
+   if (ctx->st) {
+      ctx->st->frontend_context = (void *) ctx;
 
-   /* order of precedence (least to most):
-    * - driver setting
-    * - app setting
-    * - user setting
-    */
-   bool enable_glthread = driQueryOptionb(&screen->dev->option_cache, "mesa_glthread_driver");
-
-   /* always disable glthread by default if fewer than 5 "big" CPUs are active */
-   unsigned nr_big_cpus = util_get_cpu_caps()->nr_big_cpus;
-   if (util_get_cpu_caps()->nr_cpus < 4 || (nr_big_cpus && nr_big_cpus < 5))
-      enable_glthread = false;
-
-   int app_enable_glthread = driQueryOptioni(&screen->dev->option_cache, "mesa_glthread_app_profile");
-   if (app_enable_glthread != -1) {
-      /* if set (not -1), apply the app setting */
-      enable_glthread = app_enable_glthread == 1;
-   }
-   if (getenv("mesa_glthread")) {
-      /* only apply the env var if set */
-      bool user_enable_glthread = debug_get_bool_option("mesa_glthread", false);
-      if (user_enable_glthread != enable_glthread) {
-         /* print warning to mimic old behavior */
-         fprintf(stderr, "ATTENTION: default value of option mesa_glthread overridden by environment.\n");
+      if (ctx->st->cso_context) {
+         ctx->pp = pp_init(ctx->st->pipe, screen->pp_enabled,
+                           ctx->st->cso_context,
+                           ctx->st, st_context_invalidate_state);
+         ctx->hud = hud_create(ctx->st->cso_context,
+                               share_ctx ? share_ctx->hud : NULL,
+                               ctx->st, st_context_invalidate_state);
       }
-      enable_glthread = user_enable_glthread;
+
+      /* order of precedence (least to most):
+       * - driver setting
+       * - app setting
+       * - user setting
+       */
+      bool enable_glthread = driQueryOptionb(&screen->dev->option_cache, "mesa_glthread_driver");
+
+      /* always disable glthread by default if fewer than 5 "big" CPUs are active */
+      unsigned nr_big_cpus = util_get_cpu_caps()->nr_big_cpus;
+      if (util_get_cpu_caps()->nr_cpus < 4 || (nr_big_cpus && nr_big_cpus < 5))
+         enable_glthread = false;
+
+      int app_enable_glthread = driQueryOptioni(&screen->dev->option_cache, "mesa_glthread_app_profile");
+      if (app_enable_glthread != -1) {
+         /* if set (not -1), apply the app setting */
+         enable_glthread = app_enable_glthread == 1;
+      }
+      if (getenv("mesa_glthread")) {
+         /* only apply the env var if set */
+         bool user_enable_glthread = debug_get_bool_option("mesa_glthread", false);
+         if (user_enable_glthread != enable_glthread) {
+            /* print warning to mimic old behavior */
+            fprintf(stderr, "ATTENTION: default value of option mesa_glthread overridden by environment.\n");
+         }
+         enable_glthread = user_enable_glthread;
+      }
+      /* Do this last. */
+      if (enable_glthread)
+         _mesa_glthread_init(ctx->st->ctx);
    }
-   /* Do this last. */
-   if (enable_glthread)
-      _mesa_glthread_init(ctx->st->ctx);
 
    *error = __DRI_CTX_ERROR_SUCCESS;
    return ctx;
 
  fail:
-   if (ctx && ctx->st)
-      st_destroy_context(ctx->st);
+   if (ctx) {
+      if (ctx->st)
+         st_destroy_context(ctx->st);
+      else if (ctx->pipe)
+         ctx->pipe->destroy(ctx->pipe);
+   }
 
    free(ctx);
    return NULL;
@@ -246,25 +274,30 @@ dri_create_context(struct dri_screen *screen,
 void
 dri_destroy_context(struct dri_context *ctx)
 {
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(ctx->st->ctx);
+   if (ctx->st) {
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(ctx->st->ctx);
 
-   if (ctx->hud) {
-      hud_destroy(ctx->hud, ctx->st->cso_context);
+      if (ctx->hud) {
+         hud_destroy(ctx->hud, ctx->st->cso_context);
+      }
+
+      if (ctx->pp)
+         pp_free(ctx->pp);
+
+      /* No particular reason to wait for command completion before
+       * destroying a context, but we flush the context here
+       * to avoid having to add code elsewhere to cope with flushing a
+       * partially destroyed context.
+       */
+      st_context_flush(ctx->st, 0, NULL, NULL, NULL);
+      st_destroy_context(ctx->st);
+   } else if (ctx->pipe) {
+      ctx->pipe->destroy(ctx->pipe);
    }
 
-   if (ctx->pp)
-      pp_free(ctx->pp);
-
-   /* No particular reason to wait for command completion before
-    * destroying a context, but we flush the context here
-    * to avoid having to add code elsewhere to cope with flushing a
-    * partially destroyed context.
-    */
-   st_context_flush(ctx->st, 0, NULL, NULL, NULL);
-   st_destroy_context(ctx->st);
    free(ctx);
 }
 
@@ -272,17 +305,21 @@ dri_destroy_context(struct dri_context *ctx)
 bool
 dri_unbind_context(struct dri_context *ctx)
 {
-   /* dri_util.c ensures cPriv is not null */
-   struct st_context *st = ctx->st;
+   if (ctx->st) {
+      /* dri_util.c ensures cPriv is not null */
+      struct st_context *st = ctx->st;
 
-   if (st == st_api_get_current()) {
-      _mesa_glthread_finish(st->ctx);
+      if (st == st_api_get_current()) {
+         _mesa_glthread_finish(st->ctx);
 
-      /* Record HUD queries for the duration the context was "current". */
-      if (ctx->hud)
-         hud_record_only(ctx->hud, st->pipe);
+         /* Record HUD queries for the duration the context was "current". */
+         if (ctx->hud)
+            hud_record_only(ctx->hud, st->pipe);
 
-      st_api_make_current(NULL, NULL, NULL);
+         st_api_make_current(NULL, NULL, NULL);
+      }
+   } else if (ctx->pipe) {
+      ctx->pipe->unbind(ctx->pipe);
    }
 
    if (ctx->draw || ctx->read) {
@@ -305,6 +342,8 @@ dri_make_current(struct dri_context *ctx,
 		 struct dri_drawable *draw,
 		 struct dri_drawable *read)
 {
+   bool res;
+
    /* dri_unbind_context() is always called before this, so drawables are
     * always NULL here.
     */
@@ -314,16 +353,24 @@ dri_make_current(struct dri_context *ctx,
    if ((draw && !read) || (!draw && read))
       return GL_FALSE; /* only both non-NULL or both NULL are allowed */
 
-   /* Wait for glthread to finish because we can't use st_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(ctx->st->ctx);
+   if (ctx->st) {
+      /* Wait for glthread to finish because we can't use st_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(ctx->st->ctx);
+   }
 
    /* There are 2 cases that can occur here. Either we bind drawables, or we
     * bind NULL for configless and surfaceless contexts.
     */
-   if (!draw && !read)
-      return st_api_make_current(ctx->st, NULL, NULL);
+   if (!draw && !read) {
+      if (ctx->st)
+         return st_api_make_current(ctx->st, NULL, NULL);
+      else if (ctx->pipe)
+         return ctx->pipe->make_current(ctx->pipe, NULL, NULL);
+      else
+         return GL_FALSE;
+   }
 
    /* Bind drawables to the context */
    ctx->draw = draw;
@@ -337,7 +384,15 @@ dri_make_current(struct dri_context *ctx,
       read->texture_stamp = read->lastStamp - 1;
    }
 
-   st_api_make_current(ctx->st, &draw->base, &read->base);
+   if (ctx->st)
+      res = st_api_make_current(ctx->st, &draw->base, &read->base);
+   else if (ctx->pipe)
+      res = ctx->pipe->make_current(ctx->pipe, draw->pipe, read->pipe);
+   else
+      res = false;
+
+   if (!res)
+      return GL_FALSE;
 
    /* This is ok to call here. If they are already init, it's a no-op. */
    if (ctx->pp && draw->textures[ST_ATTACHMENT_BACK_LEFT])
@@ -348,11 +403,15 @@ dri_make_current(struct dri_context *ctx,
 }
 
 struct dri_context *
-dri_get_current(void)
+dri_get_current(struct dri_screen *screen)
 {
-   struct st_context *st = st_api_get_current();
+   if (screen->base.screen->is_pvr) {
+      return screen->base.screen->get_current_dri_context(screen->base.screen);
+   } else {
+      struct st_context *st = st_api_get_current();
 
-   return (struct dri_context *) st ? st->frontend_context : NULL;
+      return (struct dri_context *) st ? st->frontend_context : NULL;
+   }
 }
 
 /* vim: set sw=3 ts=8 sts=3 expandtab: */

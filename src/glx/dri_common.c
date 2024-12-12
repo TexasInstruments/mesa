@@ -938,6 +938,19 @@ dri_bind_tex_image(__GLXDRIdrawable *base, int buffer, const int *attrib_list)
                         base->dri_drawable);
 }
 
+void
+dri_release_tex_image(__GLXDRIdrawable *base, int buffer)
+{
+   struct glx_context *gc = __glXGetCurrentContext();
+
+   if (!base)
+      return;
+
+   dri_release_tex_buffer(gc->driContext,
+                          base->textureTarget,
+                          base->dri_drawable);
+}
+
 bool
 dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, int fd, const __DRIextension **loader_extensions, bool driver_name_is_inferred)
 {
@@ -989,6 +1002,7 @@ dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, in
 
    psc->vtable = &dri_screen_vtable;
    psc->driScreen.bindTexImage = dri_bind_tex_image;
+   psc->driScreen.releaseTexImage = dri_release_tex_image;
 
    return true;
 

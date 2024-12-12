@@ -27,6 +27,9 @@
 #ifndef _API_H_
 #define _API_H_
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "util/format/u_formats.h"
 
 struct st_context;
@@ -56,6 +59,10 @@ enum st_context_error {
    ST_CONTEXT_SUCCESS = 0,
    ST_CONTEXT_ERROR_NO_MEMORY,
    ST_CONTEXT_ERROR_BAD_VERSION,
+   ST_CONTEXT_ERROR_BAD_API,
+   ST_CONTEXT_ERROR_BAD_FLAG,
+   ST_CONTEXT_ERROR_UNKNOWN_ATTRIBUTE,
+   ST_CONTEXT_ERROR_UNKNOWN_FLAG,
 };
 
 /**

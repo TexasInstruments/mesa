@@ -175,6 +175,9 @@ kopperGetSyncValues(struct dri_drawable *drawable, int64_t target_msc, int64_t d
 PUBLIC void
 dri_set_tex_buffer2(struct dri_context *ctx, GLint target,
                     GLint format, struct dri_drawable *drawable);
+PUBLIC void
+dri_release_tex_buffer(struct dri_context *ctx, GLint target,
+                       struct dri_drawable *drawable);
 
 PUBLIC int
 dri_query_renderer_string(struct dri_screen *_screen, int param,

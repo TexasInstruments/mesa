@@ -34,6 +34,7 @@
 #include "dri_drawable.h"
 
 #include "pipe/p_screen.h"
+#include "pipe/p_drawable.h"
 #include "util/format/u_format.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
@@ -42,24 +43,22 @@
 
 static uint32_t drifb_ID = 0;
 
-static bool
-dri_st_framebuffer_validate(struct st_context *st,
-                            struct pipe_frontend_drawable *pdrawable,
-                            const enum st_attachment_type *statts,
-                            unsigned count,
-                            struct pipe_resource **out,
-                            struct pipe_resource **resolve)
+bool
+dri_framebuffer_validate(struct dri_context *ctx,
+                         struct dri_drawable *drawable,
+                         const enum st_attachment_type *statts,
+                         unsigned count,
+                         struct pipe_resource **out,
+                         struct pipe_resource **resolve)
 {
-   struct dri_context *ctx = (struct dri_context *)st->frontend_context;
-   struct dri_drawable *drawable = (struct dri_drawable *)pdrawable;
    struct dri_screen *screen = drawable->screen;
    unsigned statt_mask, new_mask;
    bool new_stamp;
    int i;
    unsigned int lastStamp;
    struct pipe_resource **textures =
-      drawable->stvis.samples > 1 ? drawable->msaa_textures
-                                  : drawable->textures;
+      drawable->stvis.samples > 1 && ctx->st ? drawable->msaa_textures
+                                             : drawable->textures;
 
    statt_mask = 0x0;
    for (i = 0; i < count; i++)
@@ -117,6 +116,20 @@ dri_st_framebuffer_validate(struct st_context *st,
    }
 
    return true;
+}
+
+static bool
+dri_st_framebuffer_validate(struct st_context *st,
+                            struct pipe_frontend_drawable *pdrawable,
+                            const enum st_attachment_type *statts,
+                            unsigned count,
+                            struct pipe_resource **out,
+                            struct pipe_resource **resolve)
+{
+   struct dri_context *ctx = (struct dri_context *)st->frontend_context;
+   struct dri_drawable *drawable = (struct dri_drawable *)pdrawable;
+
+   return dri_framebuffer_validate(ctx, drawable, statts, count, out, resolve);
 }
 
 static bool
@@ -184,7 +197,10 @@ dri_create_drawable(struct dri_screen *screen, const struct dri_config *config,
    switch (screen->type) {
    case DRI_SCREEN_DRI3:
    case DRI_SCREEN_KMS_SWRAST:
-      dri2_init_drawable(drawable, isPixmap, visual->alphaBits);
+      if (!dri2_init_drawable(drawable, isPixmap, visual)) {
+         dri_put_drawable(drawable);
+         return NULL;
+      }
       break;
    case DRI_SCREEN_SWRAST:
       drisw_init_drawable(drawable, isPixmap, visual->alphaBits);
@@ -214,8 +230,17 @@ dri_destroy_drawable(struct dri_drawable *drawable)
    /* Notify the st manager that this drawable is no longer valid */
    st_api_destroy_drawable(&drawable->base);
 
-   if (screen->type == DRI_SCREEN_KOPPER)
+   switch (screen->type) {
+   case DRI_SCREEN_DRI3:
+   case DRI_SCREEN_KMS_SWRAST:
+      dri2_destroy_drawable(drawable);
+      break;
+   case DRI_SCREEN_SWRAST:
+      break;
+   case DRI_SCREEN_KOPPER:
       kopper_destroy_drawable(drawable);
+      break;
+   }
 
    FREE(drawable->damage_rects);
    FREE(drawable);
@@ -262,12 +287,9 @@ dri_drawable_validate_att(struct dri_context *ctx,
    drawable->base.validate(ctx->st, &drawable->base, statts, count, NULL, NULL);
 }
 
-/**
- * These are used for GLX_EXT_texture_from_pixmap
- */
-void
-dri_set_tex_buffer2(struct dri_context *ctx, GLint target,
-                    GLint format, struct dri_drawable *drawable)
+static void
+dri_set_tex_buffer2_st(struct dri_context *ctx, GLint target,
+                       GLint format, struct dri_drawable *drawable)
 {
    struct st_context *st = ctx->st;
    struct pipe_resource *pt;
@@ -308,6 +330,35 @@ dri_set_tex_buffer2(struct dri_context *ctx, GLint target,
       drawable->update_tex_buffer(drawable, ctx, pt);
 
       st_context_teximage(ctx->st, target, 0, internal_format, pt, false);
+   }
+}
+
+/**
+ * These are used for GLX_EXT_texture_from_pixmap
+ */
+void
+dri_set_tex_buffer2(struct dri_context *ctx, GLint target,
+                    GLint format, struct dri_drawable *drawable)
+{
+   if (ctx->st) {
+      dri_set_tex_buffer2_st(ctx, target, format, drawable);
+   } else if (ctx->pipe) {
+      struct pipe_context *pctx = ctx->pipe;
+      struct pipe_drawable *pdrawable = drawable->pipe;
+
+      pctx->set_tex_buffer(pctx, target, format, pdrawable);
+   }
+}
+
+void
+dri_release_tex_buffer(struct dri_context *ctx, GLint target,
+                       struct dri_drawable *drawable)
+{
+   if (ctx->pipe) {
+      struct pipe_context *pctx = ctx->pipe;
+      struct pipe_drawable *pdrawable = drawable->pipe;
+
+      pctx->release_tex_buffer(pctx, target, pdrawable);
    }
 }
 
@@ -461,19 +512,11 @@ notify_before_flush_cb(void* _args)
    pipe->flush_resource(pipe, args->drawable->textures[ST_ATTACHMENT_BACK_LEFT]);
 }
 
-/**
- * DRI2 flush extension, the flush_with_flags function.
- *
- * \param context           the context
- * \param drawable          the drawable to flush
- * \param flags             a combination of _DRI2_FLUSH_xxx flags
- * \param throttle_reason   the reason for throttling, 0 = no throttling
- */
-void
-dri_flush(struct dri_context *ctx,
-          struct dri_drawable *drawable,
-          unsigned flags,
-          enum __DRI2throttleReason reason)
+static void
+dri_flush_st(struct dri_context *ctx,
+             struct dri_drawable *drawable,
+             unsigned flags,
+             enum __DRI2throttleReason reason)
 {
    struct st_context *st;
    unsigned flush_flags;
@@ -567,12 +610,50 @@ dri_flush(struct dri_context *ctx,
 }
 
 /**
+ * DRI2 flush extension, the flush_with_flags function.
+ *
+ * \param context           the context
+ * \param drawable          the drawable to flush
+ * \param flags             a combination of _DRI2_FLUSH_xxx flags
+ * \param throttle_reason   the reason for throttling, 0 = no throttling
+ */
+void
+dri_flush(struct dri_context *ctx,
+          struct dri_drawable *drawable,
+          unsigned flags,
+          enum __DRI2throttleReason reason)
+{
+   struct pipe_screen *screen;
+
+   if (drawable)
+      screen = drawable->screen->base.screen;
+   else if (ctx)
+      screen = ctx->screen->base.screen;
+   else
+      screen = NULL;
+
+   if (screen) {
+      if (screen->is_pvr) {
+         struct pipe_drawable *pdrawable = drawable ? drawable->pipe : NULL;
+         struct pipe_context *pctx = ctx ? ctx->pipe : NULL;
+
+         screen->flush_pvr(pctx, pdrawable, flags, reason);
+
+	 if (pdrawable)
+	    pdrawable->invalidate(pdrawable);
+      } else {
+         dri_flush_st(ctx, drawable, flags, reason);
+      }
+   }
+}
+
+/**
  * DRI2 flush extension.
  */
 void
 dri_flush_drawable(struct dri_drawable *dPriv)
 {
-   struct dri_context *ctx = dri_get_current();
+   struct dri_context *ctx = dri_get_current(dPriv->screen);
 
    if (ctx)
       dri_flush(ctx, dPriv, __DRI2_FLUSH_DRAWABLE, -1);

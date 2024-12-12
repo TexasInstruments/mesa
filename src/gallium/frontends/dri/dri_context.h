@@ -74,7 +74,14 @@ struct dri_context
    } dri2;
 
    /* gallium */
+
+   /**
+    * Only one of the following is used at any one time.
+    * PVR uses pipe, but not st. Everything else uses st, but not pipe.
+    */
    struct st_context *st;
+   struct pipe_context *pipe;
+
    struct pp_queue_t *pp;
    struct hud_context *hud;
 };
@@ -93,7 +100,7 @@ dri_make_current(struct dri_context *ctx,
 		 struct dri_drawable *read);
 
 struct dri_context *
-dri_get_current(void);
+dri_get_current(struct dri_screen *screen);
 
 struct dri_context *
 dri_create_context(struct dri_screen *screen,

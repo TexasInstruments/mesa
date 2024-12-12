@@ -225,8 +225,8 @@ drisw_copy_to_front(struct pipe_context *pipe,
 static void
 drisw_swap_buffers_with_damage(struct dri_drawable *drawable, int nrects, const int *rects)
 {
-   struct dri_context *ctx = dri_get_current();
    struct dri_screen *screen = drawable->screen;
+   struct dri_context *ctx = dri_get_current(screen);
    struct pipe_resource *ptex;
 
    if (!ctx)
@@ -297,8 +297,8 @@ static void
 drisw_copy_sub_buffer(struct dri_drawable *drawable, int x, int y,
                       int w, int h)
 {
-   struct dri_context *ctx = dri_get_current();
    struct dri_screen *screen = drawable->screen;
+   struct dri_context *ctx = dri_get_current(screen);
    struct pipe_resource *ptex;
    struct pipe_box box;
    if (!ctx)

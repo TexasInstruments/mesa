@@ -627,11 +627,11 @@ dri2_setup_screen(_EGLDisplay *disp)
       disp->ClientAPIs |= EGL_OPENGL_ES3_BIT_KHR;
 
    disp->Extensions.KHR_create_context = EGL_TRUE;
-   disp->Extensions.KHR_create_context_no_error = EGL_TRUE;
+   disp->Extensions.KHR_create_context_no_error = pscreen->caps.context_no_error;
    disp->Extensions.KHR_no_config_context = EGL_TRUE;
    disp->Extensions.KHR_surfaceless_context = EGL_TRUE;
 
-   disp->Extensions.MESA_gl_interop = EGL_TRUE;
+   disp->Extensions.MESA_gl_interop =  pscreen->caps.mesa_gl_interop;
 
    disp->Extensions.MESA_query_driver = EGL_TRUE;
 
@@ -682,7 +682,8 @@ dri2_setup_screen(_EGLDisplay *disp)
    disp->Extensions.KHR_reusable_sync = EGL_TRUE;
 
 #ifdef HAVE_LIBDRM
-   if (pscreen->caps.dmabuf & DRM_PRIME_CAP_EXPORT)
+   if (pscreen->caps.dmabuf & DRM_PRIME_CAP_EXPORT &&
+       pscreen->caps.image_dmabuf_export)
       disp->Extensions.MESA_image_dma_buf_export = true;
 
    if (dri2_dpy->has_dmabuf_import) {
@@ -1769,11 +1770,28 @@ static EGLBoolean
 dri2_release_tex_image(_EGLDisplay *disp, _EGLSurface *surf, EGLint buffer)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display_lock(disp);
+   struct dri2_egl_context *dri2_ctx;
+   _EGLContext *ctx;
+   GLint target;
+   struct dri_drawable *dri_drawable = dri2_dpy->vtbl->get_dri_drawable(surf);
+
+   ctx = _eglGetCurrentContext();
+   dri2_ctx = dri2_egl_context(ctx);
 
    if (!_eglReleaseTexImage(disp, surf, buffer)) {
       mtx_unlock(&dri2_dpy->lock);
       return EGL_FALSE;
    }
+
+   switch (surf->TextureTarget) {
+   case EGL_TEXTURE_2D:
+      target = GL_TEXTURE_2D;
+      break;
+   default:
+      assert(!"missing texture target");
+   }
+
+   dri_release_tex_buffer(dri2_ctx->dri_context, target, dri_drawable);
 
    mtx_unlock(&dri2_dpy->lock);
 

@@ -56,4 +56,6 @@ void
 dri_image_fence_sync(struct dri_context *ctx, struct dri_image *img);
 #endif
 
+struct pipe_resource *
+pipe_resource_from_dri_image(struct dri_image *img);
 /* vim: set sw=3 ts=8 sts=3 expandtab: */

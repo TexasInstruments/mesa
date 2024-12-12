@@ -1007,6 +1007,10 @@ struct pipe_caps {
    bool astc_decode_mode;
    bool shader_subgroup_quad_all_stages;
    bool call_finalize_nir_in_linker;
+   bool accumulation_buffer;
+   bool mesa_gl_interop;
+   bool context_no_error;
+   bool image_dmabuf_export;
 
    int accelerated;
    int min_texel_offset;

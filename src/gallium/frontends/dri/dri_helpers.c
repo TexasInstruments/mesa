@@ -44,6 +44,11 @@ dri2_is_opencl_interop_loaded_locked(struct dri_screen *screen)
 static bool
 dri2_load_opencl_interop(struct dri_screen *screen)
 {
+   struct pipe_screen *pscreen = screen->base.screen;
+
+   if (pscreen->is_pvr)
+      return true;
+
 #if defined(RTLD_DEFAULT)
    bool success;
 
@@ -92,18 +97,25 @@ dri_fence_get_caps(struct dri_screen *driscreen)
 void *
 dri_create_fence(struct dri_context *ctx)
 {
-   struct st_context *st = ctx->st;
    struct dri2_fence *fence = CALLOC_STRUCT(dri2_fence);
 
    if (!fence)
       return NULL;
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(st->ctx);
+   if (ctx->st) {
+      struct st_context *st = ctx->st;
 
-   st_context_flush(st, 0, &fence->pipe_fence, NULL, NULL);
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(st->ctx);
+
+      st_context_flush(st, 0, &fence->pipe_fence, NULL, NULL);
+   } else {
+      struct pipe_context *pipe = ctx->pipe;
+
+      pipe->create_fence(pipe, &fence->pipe_fence);
+   }
 
    if (!fence->pipe_fence) {
       FREE(fence);
@@ -117,22 +129,33 @@ dri_create_fence(struct dri_context *ctx)
 void *
 dri_create_fence_fd(struct dri_context *dri_ctx, int fd)
 {
-   struct st_context *st = dri_ctx->st;
-   struct pipe_context *ctx = st->pipe;
    struct dri2_fence *fence = CALLOC_STRUCT(dri2_fence);
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(st->ctx);
+   if (!fence)
+      return NULL;
 
-   if (fd == -1) {
-      /* exporting driver created fence, flush: */
-      st_context_flush(st, ST_FLUSH_FENCE_FD, &fence->pipe_fence, NULL, NULL);
+   if (dri_ctx->st) {
+      struct st_context *st = dri_ctx->st;
+      struct pipe_context *ctx = st->pipe;
+
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(st->ctx);
+
+      if (fd == -1) {
+         /* exporting driver created fence, flush: */
+         st_context_flush(st, ST_FLUSH_FENCE_FD, &fence->pipe_fence, NULL, NULL);
+      } else {
+         /* importing a foreign fence fd: */
+         ctx->create_fence_fd(ctx, &fence->pipe_fence, fd, PIPE_FD_TYPE_NATIVE_SYNC);
+      }
    } else {
-      /* importing a foreign fence fd: */
+      struct pipe_context *ctx = dri_ctx->pipe;
+
       ctx->create_fence_fd(ctx, &fence->pipe_fence, fd, PIPE_FD_TYPE_NATIVE_SYNC);
    }
+
    if (!fence->pipe_fence) {
       FREE(fence);
       return NULL;
@@ -154,6 +177,7 @@ dri_get_fence_fd(struct dri_screen *driscreen, void *_fence)
 void *
 dri_get_fence_from_cl_event(struct dri_screen *driscreen, intptr_t cl_event)
 {
+   struct pipe_screen *screen = driscreen->base.screen;
    struct dri2_fence *fence;
 
    if (!dri2_load_opencl_interop(driscreen))
@@ -163,11 +187,19 @@ dri_get_fence_from_cl_event(struct dri_screen *driscreen, intptr_t cl_event)
    if (!fence)
       return NULL;
 
-   fence->cl_event = (void*)cl_event;
+   if (screen->is_pvr) {
+      fence->pipe_fence = screen->get_fence_from_cl_event(screen, cl_event);
+      if (!fence->pipe_fence) {
+         FREE(fence);
+         return NULL;
+      }
+   } else {
+      fence->cl_event = (void*)cl_event;
 
-   if (!driscreen->opencl_dri_event_add_ref(fence->cl_event)) {
-      free(fence);
-      return NULL;
+      if (!driscreen->opencl_dri_event_add_ref(fence->cl_event)) {
+         free(fence);
+         return NULL;
+      }
    }
 
    fence->driscreen = driscreen;
@@ -220,8 +252,7 @@ dri_client_wait_sync(struct dri_context *_ctx, void *_fence, unsigned flags,
 void
 dri_server_wait_sync(struct dri_context *_ctx, void *_fence, unsigned flags)
 {
-   struct st_context *st = _ctx->st;
-   struct pipe_context *ctx = st->pipe;
+   struct pipe_context *ctx;
    struct dri2_fence *fence = (struct dri2_fence*)_fence;
 
    /* We might be called here with a NULL fence as a result of WaitSyncKHR
@@ -230,10 +261,17 @@ dri_server_wait_sync(struct dri_context *_ctx, void *_fence, unsigned flags)
    if (!fence)
       return;
 
-   /* Wait for glthread to finish because we can't use pipe_context from
-    * multiple threads.
-    */
-   _mesa_glthread_finish(st->ctx);
+   if (_ctx->st) {
+      struct st_context *st = _ctx->st;
+      ctx = st->pipe;
+
+      /* Wait for glthread to finish because we can't use pipe_context from
+       * multiple threads.
+       */
+      _mesa_glthread_finish(st->ctx);
+   } else {
+      ctx = _ctx->pipe;
+   }
 
    if (ctx->fence_server_sync)
       ctx->fence_server_sync(ctx, fence->pipe_fence, 0);
@@ -244,65 +282,92 @@ dri_create_image_from_renderbuffer(struct dri_context *dri_ctx,
 				     int renderbuffer, void *loaderPrivate,
                                      unsigned *error)
 {
-   struct st_context *st = dri_ctx->st;
-   struct gl_context *ctx = st->ctx;
-   struct pipe_context *p_ctx = st->pipe;
-   struct gl_renderbuffer *rb;
-   struct pipe_resource *tex;
+   struct pipe_context *p_ctx;
    struct dri_image *img;
+   struct pipe_resource *tex;
+   uint32_t internal_format;
 
-   /* Wait for glthread to finish to get up-to-date GL object lookups. */
-   _mesa_glthread_finish(st->ctx);
+   if (dri_ctx->st) {
+      struct st_context *st = dri_ctx->st;
+      struct gl_context *ctx = st->ctx;
+      struct gl_renderbuffer *rb;
 
-   /* Section 3.9 (EGLImage Specification and Management) of the EGL 1.5
-    * specification says:
-    *
-    *   "If target is EGL_GL_RENDERBUFFER and buffer is not the name of a
-    *    renderbuffer object, or if buffer is the name of a multisampled
-    *    renderbuffer object, the error EGL_BAD_PARAMETER is generated."
-    *
-    *   "If target is EGL_GL_TEXTURE_2D , EGL_GL_TEXTURE_CUBE_MAP_*,
-    *    EGL_GL_RENDERBUFFER or EGL_GL_TEXTURE_3D and buffer refers to the
-    *    default GL texture object (0) for the corresponding GL target, the
-    *    error EGL_BAD_PARAMETER is generated."
-    *   (rely on _mesa_lookup_renderbuffer returning NULL in this case)
-    */
-   rb = _mesa_lookup_renderbuffer(ctx, renderbuffer);
-   if (!rb || rb->NumSamples > 0) {
-      *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
-      return NULL;
-   }
+      p_ctx = st->pipe;
 
-   tex = rb->texture;
-   if (!tex) {
-      *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
-      return NULL;
+      /* Wait for glthread to finish to get up-to-date GL object lookups. */
+      _mesa_glthread_finish(st->ctx);
+
+      /* Section 3.9 (EGLImage Specification and Management) of the EGL 1.5
+       * specification says:
+       *
+       *   "If target is EGL_GL_RENDERBUFFER and buffer is not the name of a
+       *    renderbuffer object, or if buffer is the name of a multisampled
+       *    renderbuffer object, the error EGL_BAD_PARAMETER is generated."
+       *
+       *   "If target is EGL_GL_TEXTURE_2D , EGL_GL_TEXTURE_CUBE_MAP_*,
+       *    EGL_GL_RENDERBUFFER or EGL_GL_TEXTURE_3D and buffer refers to the
+       *    default GL texture object (0) for the corresponding GL target, the
+       *    error EGL_BAD_PARAMETER is generated."
+       *   (rely on _mesa_lookup_renderbuffer returning NULL in this case)
+       */
+      rb = _mesa_lookup_renderbuffer(ctx, renderbuffer);
+      if (!rb || rb->NumSamples > 0) {
+         *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
+         return NULL;
+      }
+
+      tex = rb->texture;
+      if (!tex) {
+         *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
+         return NULL;
+      }
+
+      internal_format = rb->InternalFormat;
+   } else {
+      p_ctx = dri_ctx->pipe;
+
+      tex = p_ctx->resource_from_renderbuffer(p_ctx, renderbuffer, error);
+      if (!tex)
+         return NULL;
+
+      internal_format = 0;
    }
 
    img = CALLOC_STRUCT(dri_image);
    if (!img) {
+      if (!dri_ctx->st)
+         pipe_resource_reference(&tex, NULL);
+
       *error = __DRI_IMAGE_ERROR_BAD_ALLOC;
       return NULL;
    }
 
    img->dri_format = tex->format;
-   img->internal_format = rb->InternalFormat;
+   img->internal_format = internal_format;
    img->loader_private = loaderPrivate;
    img->screen = dri_ctx->screen;
    img->in_fence_fd = -1;
 
-   pipe_resource_reference(&img->texture, tex);
+   if (dri_ctx->st) {
+      pipe_resource_reference(&img->texture, tex);
 
-   /* If the resource supports EGL_MESA_image_dma_buf_export, make sure that
-    * it's in a shareable state. Do this now while we still have the access to
-    * the context.
-    */
-   if (dri2_get_mapping_by_format(img->dri_format)) {
-      p_ctx->flush_resource(p_ctx, tex);
-      st_context_flush(st, 0, NULL, NULL, NULL);
+      /* If the resource supports EGL_MESA_image_dma_buf_export, make sure that
+       * it's in a shareable state. Do this now while we still have the access
+       * to the context.
+       */
+      if (dri2_get_mapping_by_format(img->dri_format)) {
+         p_ctx->flush_resource(p_ctx, tex);
+         st_context_flush(dri_ctx->st, 0, NULL, NULL, NULL);
+      }
+
+      dri_ctx->st->ctx->Shared->HasExternallySharedImages = true;
+   } else {
+      /* We already have the only reference, so no need for
+       * pipe_resource_reference.
+       */
+      img->texture = tex;
    }
 
-   ctx->Shared->HasExternallySharedImages = true;
    *error = __DRI_IMAGE_ERROR_SUCCESS;
    return img;
 }
@@ -332,49 +397,71 @@ dri2_create_from_texture(struct dri_context *dri_ctx, int target, unsigned textu
                          void *loaderPrivate)
 {
    struct dri_image *img;
-   struct st_context *st = dri_ctx->st;
-   struct gl_context *ctx = st->ctx;
-   struct pipe_context *p_ctx = st->pipe;
-   struct gl_texture_object *obj;
-   struct gl_texture_image *glimg;
-   GLuint face = 0;
+   struct pipe_context *p_ctx;
+   struct pipe_resource *pt;
+   uint32_t internal_format;
 
-   /* Wait for glthread to finish to get up-to-date GL object lookups. */
-   _mesa_glthread_finish(st->ctx);
+   if (dri_ctx->st) {
+      struct st_context *st = dri_ctx->st;
+      struct gl_context *ctx = st->ctx;
+      struct gl_texture_object *obj;
+      struct gl_texture_image *glimg;
+      GLuint face = 0;
 
-   obj = _mesa_lookup_texture(ctx, texture);
-   if (!obj || obj->Target != target) {
-      *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
-      return NULL;
-   }
+      p_ctx = st->pipe;
 
-   if (target == GL_TEXTURE_CUBE_MAP)
-      face = depth;
+      /* Wait for glthread to finish to get up-to-date GL object lookups. */
+      _mesa_glthread_finish(st->ctx);
 
-   _mesa_test_texobj_completeness(ctx, obj);
-   if (!obj->_BaseComplete || (level > 0 && !obj->_MipmapComplete)) {
-      *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
-      return NULL;
-   }
+      obj = _mesa_lookup_texture(ctx, texture);
+      if (!obj || obj->Target != target) {
+         *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
+         return NULL;
+      }
 
-   if (level < obj->Attrib.BaseLevel || level > obj->_MaxLevel) {
-      *error = __DRI_IMAGE_ERROR_BAD_MATCH;
-      return NULL;
-   }
+      if (target == GL_TEXTURE_CUBE_MAP)
+         face = depth;
 
-   glimg = obj->Image[face][level];
-   if (!glimg || !glimg->pt) {
-      *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
-      return NULL;
-   }
+      _mesa_test_texobj_completeness(ctx, obj);
+      if (!obj->_BaseComplete || (level > 0 && !obj->_MipmapComplete)) {
+         *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
+         return NULL;
+      }
 
-   if (target == GL_TEXTURE_3D && glimg->Depth < depth) {
-      *error = __DRI_IMAGE_ERROR_BAD_MATCH;
-      return NULL;
+      if (level < obj->Attrib.BaseLevel || level > obj->_MaxLevel) {
+         *error = __DRI_IMAGE_ERROR_BAD_MATCH;
+         return NULL;
+      }
+
+      glimg = obj->Image[face][level];
+      if (!glimg || !glimg->pt) {
+         *error = __DRI_IMAGE_ERROR_BAD_PARAMETER;
+         return NULL;
+      }
+
+      if (target == GL_TEXTURE_3D && glimg->Depth < depth) {
+         *error = __DRI_IMAGE_ERROR_BAD_MATCH;
+         return NULL;
+      }
+
+      pt = glimg->pt;
+      internal_format = glimg->InternalFormat;
+   } else {
+      p_ctx = dri_ctx->pipe;
+
+      pt = p_ctx->resource_from_texture(p_ctx, target, texture, depth, level,
+                                        error);
+      if (!pt)
+         return NULL;
+
+      internal_format = 0;
    }
 
    img = CALLOC_STRUCT(dri_image);
    if (!img) {
+      if (!dri_ctx->st)
+         pipe_resource_reference(&pt, NULL);
+
       *error = __DRI_IMAGE_ERROR_BAD_ALLOC;
       return NULL;
    }
@@ -382,24 +469,33 @@ dri2_create_from_texture(struct dri_context *dri_ctx, int target, unsigned textu
    img->level = level;
    img->layer = depth;
    img->in_fence_fd = -1;
-   img->dri_format = glimg->pt->format;
-   img->internal_format = glimg->InternalFormat;
+   img->dri_format = pt->format;
+   img->internal_format = internal_format;
 
    img->loader_private = loaderPrivate;
    img->screen = dri_ctx->screen;
 
-   pipe_resource_reference(&img->texture, glimg->pt);
 
-   /* If the resource supports EGL_MESA_image_dma_buf_export, make sure that
-    * it's in a shareable state. Do this now while we still have the access to
-    * the context.
-    */
-   if (dri2_get_mapping_by_format(img->dri_format)) {
-      p_ctx->flush_resource(p_ctx, glimg->pt);
-      st_context_flush(st, 0, NULL, NULL, NULL);
+   if (dri_ctx->st) {
+      pipe_resource_reference(&img->texture, pt);
+
+      /* If the resource supports EGL_MESA_image_dma_buf_export, make sure that
+       * it's in a shareable state. Do this now while we still have the access
+       * to the context.
+       */
+      if (dri2_get_mapping_by_format(img->dri_format)) {
+         p_ctx->flush_resource(p_ctx, pt);
+         st_context_flush(dri_ctx->st, 0, NULL, NULL, NULL);
+      }
+
+      dri_ctx->st->ctx->Shared->HasExternallySharedImages = true;
+   } else {
+      /* We already have the only reference, so no need for
+       * pipe_resource_reference.
+       */
+      img->texture = pt;
    }
 
-   ctx->Shared->HasExternallySharedImages = true;
    *error = __DRI_IMAGE_ERROR_SUCCESS;
    return img;
 }
@@ -498,7 +594,7 @@ static const struct dri2_format_mapping dri2_format_table[] = {
           { 1, 1, 0, __DRI_IMAGE_FORMAT_R8 },
           { 2, 1, 0, __DRI_IMAGE_FORMAT_R8 } } },
       { DRM_FORMAT_YUV444,        __DRI_IMAGE_FORMAT_NONE,
-        PIPE_FORMAT_IYUV, 3,
+        PIPE_FORMAT_Y8_U8_V8_444_UNORM, 3,
         { { 0, 0, 0, __DRI_IMAGE_FORMAT_R8 },
           { 1, 0, 0, __DRI_IMAGE_FORMAT_R8 },
           { 2, 0, 0, __DRI_IMAGE_FORMAT_R8 } } },
@@ -754,6 +850,9 @@ dri2_yuv_dma_buf_supported(struct dri_screen *screen,
 {
    struct pipe_screen *pscreen = screen->base.screen;
 
+   if (pscreen->is_pvr)
+      return false;
+
    if (pscreen->is_format_supported(pscreen, alt_pipe_format(map->pipe_format),
                                     screen->target, 0, 0, PIPE_BIND_SAMPLER_VIEW))
       return true;
@@ -784,6 +883,18 @@ dri_query_dma_buf_formats(struct dri_screen *screen, int max, int *formats,
        * must not leak it out to clients. */
       if (dri2_format_table[i].dri_fourcc == __DRI_IMAGE_FOURCC_SARGB8888)
          continue;
+
+      if (pscreen->is_pvr) {
+         /* Some YUV formats not supported by the PVR driver have pipe_format
+          * PIPE_FORMAT_IYUV (also known as I420 or YU12). The PVR driver
+          * supports IYUV, so those formats are not filtered out. Not all
+          * of the unsupported formats have a pipe format that can be used
+          * instead of IYUV, so look at the DRI Image format instead, which
+          * is invariably set to __DRI_IMAGE_FORMAT_NONE.
+          */
+         if (map->dri_format == __DRI_IMAGE_FORMAT_NONE)
+            continue;
+      }
 
       if (pscreen->is_format_supported(pscreen, map->pipe_format,
                                        screen->target, 0, 0,
@@ -841,7 +952,7 @@ dri_create_image_with_modifiers(struct dri_screen *screen,
 void
 dri_image_fence_sync(struct dri_context *ctx, struct dri_image *img)
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct pipe_context *pipe = ctx->st ? ctx->st->pipe : ctx->pipe;
    struct pipe_fence_handle *fence;
    int fd = img->in_fence_fd;
 
@@ -857,5 +968,11 @@ dri_image_fence_sync(struct dri_context *ctx, struct dri_image *img)
    pipe->screen->fence_reference(pipe->screen, &fence, NULL);
 
    close(fd);
+}
+
+struct pipe_resource *
+pipe_resource_from_dri_image(struct dri_image *img)
+{
+   return img->texture;
 }
 /* vim: set sw=3 ts=8 sts=3 expandtab: */

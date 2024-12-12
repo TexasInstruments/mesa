@@ -333,6 +333,14 @@ st_context_free_zombie_objects(struct st_context *st)
 static void
 st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
 {
+   if (st->screen->is_pvr) {
+      if (st->pipe && destroy_pipe)
+         st->pipe->destroy(st->pipe);
+
+      st->ctx->st = NULL;
+      FREE(st);
+   }
+
    st_destroy_draw(st);
    st_destroy_clear(st);
    st_destroy_bitmap(st);
@@ -443,6 +451,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    st->ctx = ctx;
    st->screen = screen;
    st->pipe = pipe;
+
+   if (pipe->screen->is_pvr)
+      return st;
 
    st->can_bind_const_buffer_as_vertex =
       screen->caps.can_bind_const_buffer_as_vertex;
@@ -808,9 +819,6 @@ st_create_context(gl_api api, struct pipe_context *pipe,
    struct dd_function_table funcs;
    struct st_context *st;
 
-   memset(&funcs, 0, sizeof(funcs));
-   st_init_driver_functions(pipe->screen, &funcs, has_egl_image_validate);
-
    /* gl_context must be 16-byte aligned due to the alignment on GLmatrix. */
    ctx = align_malloc(sizeof(struct gl_context), 16);
    if (!ctx)
@@ -819,6 +827,17 @@ st_create_context(gl_api api, struct pipe_context *pipe,
 
    ctx->pipe = pipe;
    ctx->screen = pipe->screen;
+
+   if (pipe->screen->is_pvr) {
+      st = st_create_context_priv(ctx, pipe, options);
+      if (!st)
+         align_free(ctx);
+
+      return st;
+   }
+
+   memset(&funcs, 0, sizeof(funcs));
+   st_init_driver_functions(pipe->screen, &funcs, has_egl_image_validate);
 
    if (!_mesa_initialize_context(ctx, api, no_error, visual, shareCtx, &funcs,
                                  options)) {
@@ -881,6 +900,13 @@ void
 st_destroy_context(struct st_context *st)
 {
    struct gl_context *ctx = st->ctx;
+
+   if (st->screen->is_pvr) {
+      st_destroy_context_priv(st, true);
+
+      align_free(ctx);
+   }
+
    struct gl_framebuffer *stfb, *next;
    struct gl_framebuffer *save_drawbuffer;
    struct gl_framebuffer *save_readbuffer;
