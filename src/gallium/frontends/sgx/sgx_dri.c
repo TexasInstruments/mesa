@@ -35,6 +35,8 @@
 #include "dri_util.h"
 #include "dri_helpers.h"
 #include "dri_drawable.h"
+#include "pipe-loader/pipe_loader.h"
+#include "loader/loader.h"
 
 #include "git_sha1.h"
 #include "GL/internal/mesa_interface.h"
@@ -1116,6 +1118,34 @@ PVRDRICheckDriverCompatibility(int iFdRenderGPU,
    return bCompat;
 }
 
+static int
+PVRDRIQueryCompatibleRenderOnlyDeviceFd(int kms_only_fd)
+{
+   bool is_platform_device;
+   struct pipe_loader_device *dev;
+   const char * const drivers[] = {
+      "pvr"
+   };
+
+   if (!pipe_loader_drm_probe_fd(&dev, kms_only_fd, false))
+      return -1;
+   is_platform_device = (dev->type == PIPE_LOADER_DEVICE_PLATFORM);
+   pipe_loader_release(&dev, 1);
+
+   /* For display-only devices that are not on the platform bus, we can't assume
+    * that any of the rendering devices are compatible. */
+   if (!is_platform_device)
+      return -1;
+
+   /* For platform display-only devices, we try to find a render-capable device
+    * on the platform bus and that should be compatible with the display-only
+    * device. */
+   if (ARRAY_SIZE(drivers) == 0)
+      return -1;
+
+   return loader_open_render_node_platform_device(drivers, ARRAY_SIZE(drivers));
+}
+
 static const __DRIDriverAPIExtension sgx_driver_api_extension = {
    .base = {__DRI_DRIVER_API, 2},
    .initScreen = PVRDRIInitScreen,
@@ -1136,6 +1166,7 @@ static const __DRImesaCoreExtension sgx_mesa_core_extension = {
    .createNewScreen = driCreateNewScreen2,
    .createContext = driCreateContextAttribs,
    .initScreen = NULL,
+   .queryCompatibleRenderOnlyDeviceFd = PVRDRIQueryCompatibleRenderOnlyDeviceFd,
 };
 
 static const __DRIconfigOptionsExtension sgx_config_options = {
