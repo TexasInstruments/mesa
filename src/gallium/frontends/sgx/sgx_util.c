@@ -249,6 +249,7 @@ const __DRIconfig **
 PVRDRICreateConfigs(void)
 {
 	static const GLenum asBackBufferModes[]	= { __DRI_ATTRIB_SWAP_NONE, __DRI_ATTRIB_SWAP_UNDEFINED };
+	static const bool bDBModes[] = {false, true};
 	const uint8_t *puDepthBits = PVRDRIDepthBitsArray();
 	const uint8_t *puStencilBits = PVRDRIStencilBitsArray();
 	const uint8_t *puMSAASamples = PVRDRIMSAABitsArray();
@@ -268,7 +269,7 @@ PVRDRICreateConfigs(void)
 						 puDepthBits,
 						 puStencilBits,
 						 uNumDepthStencilBits, 
-						 asBackBufferModes,
+						 bDBModes,
 						 uNumBackBufferModes, 
 						 puMSAASamples,
 						 uNumMSAASamples,
