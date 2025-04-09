@@ -27,6 +27,7 @@
 #include "drm-uapi/drm_fourcc.h"
 #include "mesa_interface.h"
 
+#include "util/macros.h"
 #include "util/ralloc.h"
 #include "util/u_screen.h"
 
@@ -341,6 +342,34 @@ pvr_release_screen(struct pvr_screen *screen)
    ralloc_free(screen);
 }
 
+static bool
+pvr_check_driver_compatibility(struct pipe_screen *pscreen,
+                               int fd_render_gpu,
+                               const char *driver_name_render_gpu,
+                               int fd_display_gpu,
+                               const char *driver_name_display_gpu)
+{
+   bool compat;
+
+   debug_printf("%s: Render driver name: %s FD: %d\n", __func__,
+                    driver_name_render_gpu, fd_render_gpu);
+   debug_printf("%s: Display driver name: %s FD: %d\n", __func__,
+                    driver_name_display_gpu ? driver_name_display_gpu : "",
+                    fd_display_gpu);
+
+   if (!driver_name_display_gpu)
+      compat = false;
+   else if (!strcmp(driver_name_display_gpu, driver_name_render_gpu))
+      compat = true;
+   else
+      compat = pvr_ddk_is_driver_compat_name(driver_name_display_gpu);
+
+   debug_printf("%s: Render and display drivers are %s\n", __func__,
+                compat ? "compatible" : "incompatible");
+
+   return compat;
+}
+
 static void
 pvr_destroy_screen(struct pipe_screen *pscreen)
 {
@@ -412,6 +441,8 @@ struct pipe_screen *pvr_screen_create(int fd,
 
    screen->base.drawable_create = pvr_drawable_create;
    screen->base.set_dri_image_params = pvr_set_dri_image_params;
+
+   screen->base.check_driver_compatibility = pvr_check_driver_compatibility;
 
    if (!PVRDRICompatInit(&pvrdri_callbacks, 6, 0))
       return NULL;
