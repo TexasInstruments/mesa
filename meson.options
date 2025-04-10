@@ -90,6 +90,12 @@ option(
 )
 
 option(
+  'gallium-pvr-alias',
+  type : 'string',
+  value : '',
+  description : 'Gallium PVR alias. This must match the name of the kernel display driver.'
+)
+option(
   'gallium-extra-hud',
   type : 'boolean',
   value : false,

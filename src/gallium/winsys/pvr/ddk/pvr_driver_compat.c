@@ -44,6 +44,13 @@
 #define PVR_DRM_MINOR_RENDER_START 128
 #define PVR_DRM_MINOR_RENDER_END   191
 
+#define PVR_STRINGIFY_HELPER(x) # x
+#define PVR_STRINGIFY(x) PVR_STRINGIFY_HELPER(x)
+
+#if defined(GALLIUM_PVR_ALIAS)
+#define GALLIUM_PVR_ALIAS_STRING PVR_STRINGIFY(GALLIUM_PVR_ALIAS)
+#endif
+
 static bool
 pvr_driver_is_pvr_name(const char *name)
 {
@@ -55,6 +62,9 @@ pvr_ddk_is_driver_compat_name(const char *name)
 {
    const char *compat_drivers[] = {
       "mediatek",
+#if defined(GALLIUM_PVR_ALIAS_STRING)
+      GALLIUM_PVR_ALIAS_STRING
+#endif
    };
 
    if (pvr_driver_is_pvr_name(name))

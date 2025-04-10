@@ -39,6 +39,10 @@ if with_ld_dynamic_list
   dril_link_depends += files('../dri.dyn')
 endif
 
+if with_gallium_pvr_alias
+  dril_c_args += '-DGALLIUM_PVR_ALIAS_IDENT=@0@'.format(gallium_pvr_alias.underscorify())
+endif
+
 dril_dri = shared_library(
   'dril_dri',
   files('dril_target.c'),
@@ -46,6 +50,7 @@ dril_dri = shared_library(
     inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_util, inc_gallium_drivers,
     inc_gallium_winsys,
   ],
+  c_args: dril_c_args,
   gnu_symbol_visibility : 'hidden',
   link_args : [ld_args_build_id, ld_args_gc_sections, dril_ld_args],
   link_depends : dril_link_depends,
@@ -125,7 +130,8 @@ foreach d : [[with_gallium_kmsro, [
              [with_gallium_d3d12, 'd3d12_dri.so'],
              [with_gallium_zink, 'zink_dri.so'],
              [with_gallium_asahi, 'asahi_dri.so'],
-             [with_gallium_pvr, 'pvr_dri.so']]
+             [with_gallium_pvr, 'pvr_dri.so'],
+             [with_gallium_pvr_alias, gallium_pvr_alias + '_dri.so']]
   if d[0]
     dril_drivers += d[1]
   endif

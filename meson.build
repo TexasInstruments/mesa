@@ -236,6 +236,17 @@ with_gallium_kmsro = system_has_kms_drm and [
   with_gallium_vc4,
 ].contains(true)
 
+if with_gallium_pvr
+  gallium_pvr_alias = get_option('gallium-pvr-alias')
+  if gallium_pvr_alias in ['pvr', 'mediatek']
+    gallium_pvr_alias = ''
+  endif
+  with_gallium_pvr_alias = gallium_pvr_alias != ''
+else
+  gallium_pvr_alias = ''
+  with_gallium_pvr_alias = false
+endif
+
 _vulkan_drivers = get_option('vulkan-drivers')
 if _vulkan_drivers.contains('auto')
   # TODO: handle swrat driver if llvm is auto/disabled

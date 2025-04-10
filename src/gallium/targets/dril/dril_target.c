@@ -610,6 +610,11 @@ PUBLIC const __DRIextension **__driDriverGetExtensions_##drivername(void) \
    return __driDriverExtensions;                                   \
 }
 
+#if defined(GALLIUM_PVR_ALIAS_IDENT)
+#define DEFINE_LOADER_PVR_ALIAS_ENTRYPOINT(drivername) \
+   DEFINE_LOADER_DRM_ENTRYPOINT(drivername)
+#endif
+
 const __DRIextension **__driDriverGetExtensions_swrast(void);
 
 PUBLIC const __DRIextension **__driDriverGetExtensions_swrast(void)
@@ -681,3 +686,7 @@ DEFINE_LOADER_DRM_ENTRYPOINT(zynqmp_dpsub)
 DEFINE_LOADER_DRM_ENTRYPOINT(lima)
 DEFINE_LOADER_DRM_ENTRYPOINT(d3d12)
 DEFINE_LOADER_DRM_ENTRYPOINT(zink)
+DEFINE_LOADER_DRM_ENTRYPOINT(pvr)
+#if defined(GALLIUM_PVR_ALIAS_IDENT)
+DEFINE_LOADER_PVR_ALIAS_ENTRYPOINT(GALLIUM_PVR_ALIAS_IDENT)
+#endif
