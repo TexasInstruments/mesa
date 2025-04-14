@@ -22,15 +22,39 @@
  * THE SOFTWARE.
  */
 
-#ifndef __PVR_DDK_PRIVATE_H__
-#define __PVR_DDK_PRIVATE_H__
+#include <string.h>
+#include <xf86drm.h>
 
-#include <stdbool.h>
+#include "util/macros.h"
+
+#include "pvr_ddk_private.h"
 
 bool
-pvr_ddk_is_driver_compat_name(const char *name);
+pvr_ddk_is_driver_compat_name(const char *name)
+{
+   const char *compat_drivers[] = {
+      "pvr",
+      "mediatek",
+   };
+
+   for (unsigned int i = 0; i < ARRAY_SIZE(compat_drivers); i++)
+      if (!strcmp(name, compat_drivers[i]))
+         return true;
+
+   return false;
+}
 
 bool
-pvr_ddk_is_driver_compat_fd(int fd);
+pvr_ddk_is_driver_compat_fd(int fd)
+{
+   drmVersionPtr version;
+   bool compat = false;
 
-#endif /* __PVR_DDK_PRIVATE_H__ */
+   version = drmGetVersion(fd);
+   if (version) {
+      compat = pvr_ddk_is_driver_compat_name(version->name);
+      drmFreeVersion(version);
+   }
+
+   return compat;
+}

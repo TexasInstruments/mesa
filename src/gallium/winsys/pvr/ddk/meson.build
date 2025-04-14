@@ -6,7 +6,8 @@ libpvrwinsys = static_library(
   [
     files(
       'pvr_ddk_winsys.c',
-      'pvr_dri_compat.c'
+      'pvr_dri_compat.c',
+      'pvr_driver_compat.c'
     ),
   ],
   include_directories : [
