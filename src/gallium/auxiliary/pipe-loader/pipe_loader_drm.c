@@ -51,6 +51,10 @@
 #include "virtio/virtio-gpu/drm_hw.h"
 #include "drm-uapi/virtgpu_drm.h"
 
+#if defined GALLIUM_PVR
+#include "pvr/ddk/pvr_ddk_public.h"
+#endif
+
 #define DRM_RENDER_NODE_DEV_NAME_FORMAT "%s/renderD%d"
 #define DRM_RENDER_NODE_MAX_NODES 63
 #define DRM_RENDER_NODE_MIN_MINOR 128
@@ -361,6 +365,15 @@ pipe_loader_get_compatible_render_capable_device_fds(int kms_only_fd, unsigned i
                                                               drivers,
                                                               ARRAY_SIZE(drivers)))
       return pipe_loader_one_fd_array(os_dupfd_cloexec(kms_only_fd), n_devices);
+
+#if defined GALLIUM_PVR
+   {
+      int fd = pvr_ddk_query_compatible_render_only_device_fd(kms_only_fd);
+
+      if (fd != -1)
+         return pipe_loader_one_fd_array(fd, n_devices);
+   }
+#endif
 
    if (!pipe_loader_drm_probe_fd(&dev, kms_only_fd, false))
       return NULL;
