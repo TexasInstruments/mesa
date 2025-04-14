@@ -40,4 +40,7 @@ pvr_create_kms_buffer_for_resource(struct pipe_resource *rsc,
                                    struct renderonly *ro,
                                    struct winsys_handle *out_handle);
 
+int
+pvr_ddk_query_compatible_render_only_device_fd(int fd);
+
 #endif /* __PVR_DDK_PUBLIC_H__ */
