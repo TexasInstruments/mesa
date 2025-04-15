@@ -92,15 +92,25 @@ MODSUPConfigQuery(const PVRDRIConfig *psConfig,
       *puValueOut = GL_TRUE;
       return true;
    case PVRDRI_CONFIG_ATTRIB_RGB_MODE:
-      *puValueOut = GL_TRUE;
+      *puValueOut = visual->rgbMode;
       return true;
    case PVRDRI_CONFIG_ATTRIB_YUV_ORDER:
+      *puValueOut = visual->YUVOrder;
+      return true;
    case PVRDRI_CONFIG_ATTRIB_YUV_NUM_OF_PLANES:
+      *puValueOut = visual->YUVNumberOfPlanes;
+      return true;
    case PVRDRI_CONFIG_ATTRIB_YUV_SUBSAMPLE:
+      *puValueOut = visual->YUVSubsample;
+      return true;
    case PVRDRI_CONFIG_ATTRIB_YUV_DEPTH_RANGE:
+      *puValueOut = visual->YUVDepthRange;
+      return true;
    case PVRDRI_CONFIG_ATTRIB_YUV_CSC_STANDARD:
+      *puValueOut = visual->YUVCSCStandard;
+      return true;
    case PVRDRI_CONFIG_ATTRIB_YUV_PLANE_BPP:
-      *puValueOut = 0;
+      *puValueOut = visual->YUVPlaneBPP;
       return true;
    case PVRDRI_CONFIG_ATTRIB_RED_MASK:
       *puValueOut = visual->redMask;
