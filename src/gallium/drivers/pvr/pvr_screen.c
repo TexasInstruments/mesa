@@ -137,6 +137,11 @@ pvr_init_screen_caps(struct pvr_screen *screen)
                                      PVRDRI_RENDERER_VENDOR_ID,
                                      &value) != -1)
          caps->vendor_id = value;
+
+      if (DRISUPQueryRendererInteger(screen->drisup_screen,
+                                     PVRDRI_RENDERER_OPENGL_ES2_CONTEXT_CLIENT_VERSION_IMG,
+                                     &value) != -1)
+         caps->opengl_es2_context_client_version = value;
    }
 
    caps->npot_textures = true;
