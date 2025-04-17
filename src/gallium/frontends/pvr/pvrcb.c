@@ -38,7 +38,7 @@ MODSUPGetBuffers(__DRIdrawable *psDRIDrawable, unsigned int uFourCC,
    int res;
 
 #if !defined(DRI_IMAGE_HAS_BUFFER_PREV)
-   uBufferMask &= ~PVRDRI_IMAGE_BUFFER_PREV;
+   uBufferMask &= ~(1 << 31);
 #endif
 
    if (psPVRDrawable->uFourCC != uFourCC) {

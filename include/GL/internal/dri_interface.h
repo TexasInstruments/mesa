@@ -2118,6 +2118,7 @@ struct __DRIimageList {
    uint32_t image_mask;
    __DRIimage *back;
    __DRIimage *front;
+   __DRIimage *prev;
 };
 
 #define __DRI_IMAGE_LOADER "DRI_IMAGE_LOADER"
