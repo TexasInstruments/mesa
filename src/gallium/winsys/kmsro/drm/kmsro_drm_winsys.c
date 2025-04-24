@@ -53,7 +53,8 @@ static void kmsro_ro_destroy(struct renderonly *ro)
    FREE(ro);
 }
 
-struct pipe_screen *kmsro_drm_screen_create(int kms_fd,
+struct pipe_screen *kmsro_drm_screen_create(int ro_fd, int kms_fd,
+                                            bool use_kms_fd,
                                             const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen = NULL;
@@ -61,7 +62,7 @@ struct pipe_screen *kmsro_drm_screen_create(int kms_fd,
    int *gpu_fds = NULL;
    unsigned int n_devices = 0;
 
-   gpu_fds = pipe_loader_get_compatible_render_capable_device_fds(kms_fd, &n_devices);
+   gpu_fds = pipe_loader_get_compatible_render_capable_device_fds(ro_fd, &n_devices);
    if (n_devices == 0) {
       goto out;
    }
@@ -72,6 +73,7 @@ struct pipe_screen *kmsro_drm_screen_create(int kms_fd,
       if (!ro)
          goto out;
 
+      ro->use_kms_fd = use_kms_fd;
       ro->kms_fd = kms_fd;
       ro->gpu_fd = dup(gpu_fds[i]);
 

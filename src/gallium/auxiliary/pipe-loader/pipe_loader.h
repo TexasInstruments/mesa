@@ -254,6 +254,18 @@ bool
 pipe_loader_drm_probe_fd(struct pipe_loader_device **dev, int fd, bool zink);
 
 /**
+ * Initialize a DRM device in an already opened fd.
+ *
+ * This is the same as pipe_loader_drm_probe_fd, except that the kms_fd and
+ * use_kms_fd can be specified as well.
+ *
+ * \sa pipe_loader_probe
+ */
+bool
+pipe_loader_drm_probe_fd_kms_fd(struct pipe_loader_device **dev, int fd,
+                                int kms_fd, bool use_kms_fd, bool zink);
+
+/**
  * Get the dri options used for the DRM driver of the given name, if any.
  *
  * The returned array is heap-allocated.

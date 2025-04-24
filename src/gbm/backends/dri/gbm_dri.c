@@ -268,7 +268,9 @@ dri_screen_create_for_driver(struct gbm_dri_device *dri, char *driver_name, bool
    dri->swrast = swrast;
 
    dri->loader_extensions = gbm_dri_screen_extensions;
-   dri->screen = driCreateNewScreen3(0, swrast ? -1 : dri->base.v0.fd,
+   dri->screen = driCreateNewScreen3(0, swrast ? -1 : dri->fd_render_gpu,
+                                        swrast ? -1 : dri->base.v0.fd,
+                                        true,
                                              dri->loader_extensions,
                                              type,
                                              &dri->driver_configs, driver_name_is_inferred, true, dri);

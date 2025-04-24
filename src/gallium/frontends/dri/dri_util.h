@@ -107,7 +107,7 @@ struct __DriverContextConfig {
 #define __DRIVER_CONTEXT_ATTRIB_PROTECTED        (1 << 4)
 
 PUBLIC struct dri_screen *
-driCreateNewScreen3(int scrn, int fd,
+driCreateNewScreen3(int scrn, int fd, int kms_fd, bool use_kms_fd,
                     const __DRIextension **loader_extensions,
                     enum dri_screen_type type,
                     const struct dri_config ***driver_configs, bool driver_name_is_inferred,

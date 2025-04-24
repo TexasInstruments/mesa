@@ -952,7 +952,7 @@ dri_release_tex_image(__GLXDRIdrawable *base, int buffer)
 }
 
 bool
-dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, int fd, const __DRIextension **loader_extensions, bool driver_name_is_inferred)
+dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, int fd, int kms_fd, const __DRIextension **loader_extensions, bool driver_name_is_inferred)
 {
    const struct dri_config **driver_configs;
    struct glx_config *configs = NULL, *visuals = NULL;
@@ -975,7 +975,7 @@ dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, in
       unreachable("unknown glx driver type");
    }
 
-   psc->frontend_screen = driCreateNewScreen3(screen, fd,
+   psc->frontend_screen = driCreateNewScreen3(screen, fd, kms_fd, false,
                                                  loader_extensions,
                                                  type,
                                                  &driver_configs, driver_name_is_inferred,

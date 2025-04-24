@@ -1867,7 +1867,9 @@ dri2_init_screen(struct dri_screen *screen, bool driver_name_is_inferred)
    screen->can_share_buffer = true;
 
 #ifdef HAVE_LIBDRM
-   if (pipe_loader_drm_probe_fd(&screen->dev, screen->fd, false)) {
+   if (pipe_loader_drm_probe_fd_kms_fd(&screen->dev, screen->fd,
+                                       screen->kms_fd, screen->use_kms_fd,
+                                       false)) {
       pscreen = pipe_loader_create_screen(screen->dev, driver_name_is_inferred);
       if (pscreen && pscreen->is_pvr && screen->dri2.image)
          pscreen->set_dri_image_params(pscreen,

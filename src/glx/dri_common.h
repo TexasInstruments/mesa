@@ -114,7 +114,7 @@ dri_bind_tex_image(__GLXDRIdrawable *base, int buffer, const int *attrib_list);
 void
 dri_release_tex_image(__GLXDRIdrawable *base, int buffer);
 bool
-dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, int fd, const __DRIextension **loader_extensions, bool driver_name_is_inferred);
+dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, int fd, int kms_fd, const __DRIextension **loader_extensions, bool driver_name_is_inferred);
 #endif /* GLX_DIRECT_RENDERING */
 
 #endif /* _DRI_COMMON_H */

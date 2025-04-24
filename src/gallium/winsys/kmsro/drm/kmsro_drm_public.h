@@ -27,10 +27,13 @@
 #ifndef __KMSRO_DRM_PUBLIC_H__
 #define __KMSRO_DRM_PUBLIC_H__
 
+#include <stdbool.h>
+
 struct pipe_screen;
 struct pipe_screen_config;
 
-struct pipe_screen *kmsro_drm_screen_create(int kms_fd,
+struct pipe_screen *kmsro_drm_screen_create(int ro_fd, int kms_fd,
+                                            bool use_kms_fd,
                                             const struct pipe_screen_config *config);
 
 #endif /* __KMSRO_DRM_PUBLIC_H__ */

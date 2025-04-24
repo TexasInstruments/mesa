@@ -96,7 +96,10 @@ struct dri_screen
 
    /* drm */
    int fd;
+   int kms_fd;
    bool can_share_buffer;
+   /* Use the kms_fd as is, don't substitute another device */
+   bool use_kms_fd;
 
    struct pipe_loader_device *dev;
 

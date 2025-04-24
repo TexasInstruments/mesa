@@ -501,7 +501,7 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
 
    priv->driver = GLX_DRIVER_DRI3;
 
-   if (!dri_screen_init(&psc->base, priv, screen, psc->fd_render_gpu, loader_extensions, driver_name_is_inferred)) {
+   if (!dri_screen_init(&psc->base, priv, screen, psc->fd_render_gpu, psc->fd_display_gpu, loader_extensions, driver_name_is_inferred)) {
       ErrorMessageF("glx: failed to create dri3 screen\n");
       goto handle_error;
    }
@@ -530,6 +530,7 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
           */
          if (strcmp(driverName, driverNameDisplayGPU) == 0) {
             psc->driScreenDisplayGPU = driCreateNewScreen3(screen, psc->fd_display_gpu,
+                                                           -1, false,
                                                            loader_extensions,
                                                            DRI_SCREEN_DRI3,
                                                            &driver_configs, driver_name_is_inferred,

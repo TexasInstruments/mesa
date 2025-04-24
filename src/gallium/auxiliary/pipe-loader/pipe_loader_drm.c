@@ -64,6 +64,8 @@ struct pipe_loader_drm_device {
    struct pipe_loader_device base;
    const struct drm_driver_descriptor *dd;
    int fd;
+   int kms_fd;
+   bool use_kms_fd;
 };
 
 #define pipe_loader_drm_device(dev) ((struct pipe_loader_drm_device *)dev)
@@ -117,7 +119,8 @@ get_nctx_caps(int fd, struct virgl_renderer_capset_drm *caps)
 }
 
 static bool
-pipe_loader_drm_probe_fd_nodup(struct pipe_loader_device **dev, int fd, bool zink)
+pipe_loader_drm_probe_fd_nodup(struct pipe_loader_device **dev, int fd,
+                               int kms_fd, bool use_kms_fd, bool zink)
 {
    struct pipe_loader_drm_device *ddev = CALLOC_STRUCT(pipe_loader_drm_device);
    int vendor_id, chip_id;
@@ -134,6 +137,8 @@ pipe_loader_drm_probe_fd_nodup(struct pipe_loader_device **dev, int fd, bool zin
    }
    ddev->base.ops = &pipe_loader_drm_ops;
    ddev->fd = fd;
+   ddev->kms_fd = kms_fd != -1 ? kms_fd : fd;
+   ddev->use_kms_fd = use_kms_fd;
 
    if (zink)
       ddev->base.driver_name = strdup("zink");
@@ -190,19 +195,38 @@ pipe_loader_drm_probe_fd_nodup(struct pipe_loader_device **dev, int fd, bool zin
 }
 
 bool
-pipe_loader_drm_probe_fd(struct pipe_loader_device **dev, int fd, bool zink)
+pipe_loader_drm_probe_fd_kms_fd(struct pipe_loader_device **dev, int fd,
+                                int kms_fd, bool use_kms_fd, bool zink)
 {
    bool ret;
    int new_fd;
+   int new_kms_fd;
 
    if (fd < 0 || (new_fd = os_dupfd_cloexec(fd)) < 0)
      return false;
 
-   ret = pipe_loader_drm_probe_fd_nodup(dev, new_fd, zink);
-   if (!ret)
+   if (kms_fd < 0 || kms_fd == fd)
+      new_kms_fd = new_fd;
+   else if ((new_kms_fd = os_dupfd_cloexec(kms_fd)) < 0) {
+         close(new_fd);
+         return false;
+   }
+
+   ret = pipe_loader_drm_probe_fd_nodup(dev, new_fd, new_kms_fd, use_kms_fd,
+                                        zink);
+   if (!ret) {
+      if (new_kms_fd != new_fd)
+         close(new_kms_fd);
       close(new_fd);
+   }
 
    return ret;
+}
+
+bool
+pipe_loader_drm_probe_fd(struct pipe_loader_device **dev, int fd, bool zink)
+{
+   return pipe_loader_drm_probe_fd_kms_fd(dev, fd, -1, false, zink);
 }
 
 static int
@@ -227,7 +251,7 @@ pipe_loader_drm_probe_internal(struct pipe_loader_device **devs, int ndev, bool 
       if (fd < 0)
          continue;
 
-      if (!pipe_loader_drm_probe_fd_nodup(&dev, fd, zink)) {
+      if (!pipe_loader_drm_probe_fd_nodup(&dev, fd, -1, true, zink)) {
          close(fd);
          continue;
       }
@@ -263,6 +287,8 @@ pipe_loader_drm_release(struct pipe_loader_device **dev)
 {
    struct pipe_loader_drm_device *ddev = pipe_loader_drm_device(*dev);
 
+   if (ddev->kms_fd != ddev->fd)
+      close(ddev->kms_fd);
    close(ddev->fd);
    FREE(ddev->base.driver_name);
    pipe_loader_base_release(dev);
@@ -409,7 +435,8 @@ pipe_loader_drm_create_screen(struct pipe_loader_device *dev,
 {
    struct pipe_loader_drm_device *ddev = pipe_loader_drm_device(dev);
 
-   return ddev->dd->create_screen(ddev->fd, config);
+   return ddev->dd->create_screen(ddev->fd, ddev->kms_fd, ddev->use_kms_fd,
+                                  config);
 }
 
 const struct driOptionDescription *

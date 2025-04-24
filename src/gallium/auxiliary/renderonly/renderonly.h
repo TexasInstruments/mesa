@@ -80,6 +80,7 @@ struct renderonly {
    void (*destroy)(struct renderonly *ro);
    int kms_fd;
    int gpu_fd;
+   bool use_kms_fd;
 
    simple_mtx_t bo_map_lock;
    struct util_sparse_array bo_map;

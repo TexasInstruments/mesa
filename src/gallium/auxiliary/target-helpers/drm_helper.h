@@ -32,7 +32,8 @@ const struct drm_driver_descriptor descriptor_name = {         \
 
 #define DRM_DRIVER_DESCRIPTOR_STUB(driver)                              \
    static struct pipe_screen *                                          \
-   pipe_##driver##_create_screen(int fd, const struct pipe_screen_config *config) \
+   pipe_##driver##_create_screen(int fd, int kms_fd, bool use_kms_fd,   \
+                                 const struct pipe_screen_config *config) \
    {                                                                    \
       fprintf(stderr, #driver ": driver missing\n");                    \
       return NULL;                                                      \
@@ -59,7 +60,8 @@ const struct drm_driver_descriptor descriptor_name = {         \
 #include "i915/i915_public.h"
 
 static struct pipe_screen *
-pipe_i915_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_i915_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                        const struct pipe_screen_config *config)
 {
    struct i915_winsys *iws;
    struct pipe_screen *screen;
@@ -80,7 +82,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(i915)
 #include "iris/drm/iris_drm_public.h"
 
 static struct pipe_screen *
-pipe_iris_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_iris_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                        const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -101,7 +104,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(iris)
 #include "crocus/drm/crocus_drm_public.h"
 
 static struct pipe_screen *
-pipe_crocus_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_crocus_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                          const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -121,7 +125,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(crocus)
 #include "nouveau/drm/nouveau_drm_public.h"
 
 static struct pipe_screen *
-pipe_nouveau_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_nouveau_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                           const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -145,7 +150,8 @@ const driOptionDescription v3d_driconf[] = {
 #include "r300/r300_public.h"
 
 static struct pipe_screen *
-pipe_r300_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_r300_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                        const struct pipe_screen_config *config)
 {
    struct radeon_winsys *rw;
 
@@ -166,7 +172,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(r300)
 #include "r600/r600_public.h"
 
 static struct pipe_screen *
-pipe_r600_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_r600_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                        const struct pipe_screen_config *config)
 {
    struct radeon_winsys *rw;
 
@@ -183,7 +190,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(r600)
 #include "radeonsi/si_public.h"
 
 static struct pipe_screen *
-pipe_radeonsi_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_radeonsi_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                            const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen = radeonsi_screen_create(fd, config);
 
@@ -204,7 +212,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(radeonsi)
 #include "svga/svga_public.h"
 
 static struct pipe_screen *
-pipe_vmwgfx_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_vmwgfx_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                          const struct pipe_screen_config *config)
 {
    struct svga_winsys_screen *sws;
    struct pipe_screen *screen;
@@ -226,7 +235,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(vmwgfx)
 #include "freedreno/drm/freedreno_drm_public.h"
 
 static struct pipe_screen *
-pipe_msm_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_msm_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                       const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -258,7 +268,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(kgsl)
 #include "virgl/virgl_public.h"
 
 static struct pipe_screen *
-pipe_virtio_gpu_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_virtio_gpu_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                              const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen = NULL;
 
@@ -281,7 +292,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(virtio_gpu)
 #include "vc4/drm/vc4_drm_public.h"
 
 static struct pipe_screen *
-pipe_vc4_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_vc4_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                       const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -297,7 +309,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(vc4)
 #include "v3d/drm/v3d_drm_public.h"
 
 static struct pipe_screen *
-pipe_v3d_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_v3d_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                       const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -315,7 +328,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(v3d)
 #include "panfrost/drm/panfrost_drm_public.h"
 
 static struct pipe_screen *
-pipe_panfrost_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_panfrost_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                            const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -359,7 +373,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(asahi)
 #include "etnaviv/drm/etnaviv_drm_public.h"
 
 static struct pipe_screen *
-pipe_etnaviv_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_etnaviv_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                           const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -376,7 +391,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(etnaviv)
 #include "tegra/drm/tegra_drm_public.h"
 
 static struct pipe_screen *
-pipe_tegra_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_tegra_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                         const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -394,7 +410,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(tegra)
 #include "lima/drm/lima_drm_public.h"
 
 static struct pipe_screen *
-pipe_lima_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_lima_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                        const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -415,7 +432,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(lima)
 #include "pvr/ddk/pvr_ddk_public.h"
 
 static struct pipe_screen *
-pipe_pvr_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_pvr_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                       const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
@@ -435,7 +453,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(pvr)
 #include "zink/zink_public.h"
 
 static struct pipe_screen *
-pipe_zink_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_zink_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                        const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
    screen = zink_drm_create_screen(fd, config);
@@ -455,11 +474,12 @@ DRM_DRIVER_DESCRIPTOR_STUB(zink)
 #include "kmsro/drm/kmsro_drm_public.h"
 
 static struct pipe_screen *
-pipe_kmsro_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_kmsro_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                         const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
-   screen = kmsro_drm_screen_create(fd, config);
+   screen = kmsro_drm_screen_create(fd, kms_fd, use_kms_fd, config);
    return screen ? debug_screen_wrap(screen) : NULL;
 }
 const driOptionDescription kmsro_driconf[] = {
