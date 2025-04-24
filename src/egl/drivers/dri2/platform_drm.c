@@ -486,7 +486,7 @@ dri2_drm_authenticate(_EGLDisplay *disp, uint32_t id)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
 
-   return drmAuthMagic(dri2_dpy->fd_render_gpu, id);
+   return drmAuthMagic(dri2_dpy->fd_display_gpu, id);
 }
 
 static void
@@ -752,7 +752,7 @@ dri2_initialize_drm(_EGLDisplay *disp)
 
 #ifdef HAVE_WAYLAND_PLATFORM
    dri2_dpy->device_name =
-      loader_get_device_name_for_fd(dri2_dpy->fd_render_gpu);
+      loader_get_device_name_for_fd(dri2_dpy->fd_display_gpu);
 #endif
    dri2_set_WL_bind_wayland_display(disp);
 
