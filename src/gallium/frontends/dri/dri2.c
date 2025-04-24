@@ -185,7 +185,7 @@ dri2_set_in_fence_fd(struct dri_image *img, int fd)
  * Backend functions for pipe_frontend_drawable.
  */
 
-static void
+static bool
 dri2_allocate_textures(struct dri_context *ctx,
                        struct dri_drawable *drawable,
                        const enum st_attachment_type *statts,
@@ -210,7 +210,7 @@ dri2_allocate_textures(struct dri_context *ctx,
    assert(image);
    if (!dri_image_drawable_get_buffers(drawable, &images,
                                        statts, statts_count))
-      return;
+      return false;
 
    /* Second clean useless resources*/
 
@@ -404,6 +404,8 @@ dri2_allocate_textures(struct dri_context *ctx,
          pipe_resource_reference(&drawable->textures[statt], NULL);
       }
    }
+
+   return true;
 }
 
 static bool

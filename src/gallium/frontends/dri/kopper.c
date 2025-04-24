@@ -170,7 +170,7 @@ kopper_get_pixmap_buffer(struct dri_drawable *drawable,
 }
 #endif //VK_USE_PLATFORM_XCB_KHR
 
-static void
+static bool
 kopper_allocate_textures(struct dri_context *ctx,
                          struct dri_drawable *drawable,
                          const enum st_attachment_type *statts,
@@ -196,7 +196,7 @@ kopper_allocate_textures(struct dri_context *ctx,
    if (image) {
       if (!dri_image_drawable_get_buffers(drawable, &images,
                                           statts, statts_count))
-         return;
+         return false;
    }
 
    if (image) {
@@ -346,6 +346,8 @@ XXX do this once swapinterval is hooked up
                        drawable->textures[statts[i]]);
       }
    }
+
+   return true;
 }
 
 static inline void

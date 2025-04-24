@@ -398,7 +398,7 @@ handle_in_fence(struct dri_context *ctx, struct dri_image *img)
  * as they are requested. Unused attachments are not removed, not until the
  * framebuffer is resized or destroyed.
  */
-static void
+static bool
 drisw_allocate_textures(struct dri_context *stctx,
                         struct dri_drawable *drawable,
                         const enum st_attachment_type *statts,
@@ -540,6 +540,8 @@ drisw_allocate_textures(struct dri_context *stctx,
 
    drawable->old_w = width;
    drawable->old_h = height;
+
+   return true;
 }
 
 void

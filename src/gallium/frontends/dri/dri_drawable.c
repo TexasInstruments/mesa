@@ -75,7 +75,8 @@ dri_framebuffer_validate(struct dri_context *ctx,
          if (new_stamp && drawable->update_drawable_info)
             drawable->update_drawable_info(drawable);
 
-         drawable->allocate_textures(ctx, drawable, statts, count);
+         if (!drawable->allocate_textures(ctx, drawable, statts, count))
+            return false;
 
          /* add existing textures */
          for (i = 0; i < ST_ATTACHMENT_COUNT; i++) {

@@ -106,7 +106,7 @@ struct dri_drawable
 #endif
 
    /* hooks filled in by dri2 & drisw */
-   void (*allocate_textures)(struct dri_context *ctx,
+   bool (*allocate_textures)(struct dri_context *ctx,
                              struct dri_drawable *drawable,
                              const enum st_attachment_type *statts,
                              unsigned count);
