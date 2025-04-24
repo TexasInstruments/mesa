@@ -847,6 +847,12 @@ dri2_create_screen(_EGLDisplay *disp)
 
    int screen_fd = dri2_dpy->swrast_not_kms ? -1 : dri2_dpy->fd_render_gpu;
    int kms_fd = dri2_dpy->swrast_not_kms ? -1 : dri2_dpy->fd_display_gpu;
+
+#ifdef HAVE_BIND_WL_DISPLAY
+   if (!dri2_dpy->swrast_not_kms && dri2_dpy->fd_server_gpu != -1)
+      kms_fd = dri2_dpy->fd_server_gpu;
+#endif
+
    dri2_dpy->dri_screen_render_gpu = driCreateNewScreen3(
       0, screen_fd, kms_fd, false, dri2_dpy->loader_extensions, type,
       &dri2_dpy->driver_configs, false, dri2_dpy->multibuffers_available, disp);
