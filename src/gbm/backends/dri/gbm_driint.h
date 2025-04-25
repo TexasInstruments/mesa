@@ -49,6 +49,8 @@ struct gbm_dri_visual {
 struct gbm_dri_device {
    struct gbm_device base;
 
+   int fd_render_gpu;
+
    char *driver_name; /* Name of the DRI module, without the _dri suffix */
    bool software; /* A software driver was loaded */
    bool swrast; /* this is swrast */
@@ -165,6 +167,12 @@ gbm_dri_bo_unmap_dumb(struct gbm_dri_bo *bo)
 {
    munmap(bo->map, bo->size);
    bo->map = NULL;
+}
+
+static inline int
+gbm_dri_device_get_fd_render_gpu(struct gbm_dri_device *dri)
+{
+   return dri->fd_render_gpu;
 }
 
 #endif

@@ -53,6 +53,7 @@
 #include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/bitscan.h"
+#include "util/os_file.h"
 #include "dri_util.h"
 #include "pipe/p_screen.h"
 #include "dri_screen.h"
@@ -292,7 +293,7 @@ dri_screen_create(struct gbm_dri_device *dri)
    char *driver_name;
    int ret;
 
-   driver_name = loader_get_driver_for_fd(dri->base.v0.fd);
+   driver_name = loader_get_driver_for_fd(dri->fd_render_gpu);
    if (!driver_name)
       return -1;
 
@@ -1234,6 +1235,9 @@ dri_destroy(struct gbm_device *gbm)
    free(dri->driver_configs);
    free(dri->driver_name);
 
+   if (dri->fd_render_gpu >= 0 && dri->fd_render_gpu != dri->base.v0.fd)
+      close(dri->fd_render_gpu);
+
    free(dri);
 }
 
@@ -1248,7 +1252,9 @@ dri_device_create(int fd, uint32_t gbm_backend_version)
    if (!dri)
       return NULL;
 
-   dri->base.v0.fd = fd;
+   dri->fd_render_gpu = fd;
+   loader_get_user_preferred_fd(&dri->fd_render_gpu, &dri->base.v0.fd);
+
    dri->base.v0.backend_version = gbm_backend_version;
    dri->base.v0.bo_create = gbm_dri_bo_create;
    dri->base.v0.bo_import = gbm_dri_bo_import;
@@ -1305,6 +1311,9 @@ dri_device_create(int fd, uint32_t gbm_backend_version)
    return &dri->base;
 
 err_dri:
+   if (dri->fd_render_gpu >= 0 && dri->fd_render_gpu != dri->base.v0.fd)
+      close(dri->fd_render_gpu);
+
    free(dri);
 
    return NULL;

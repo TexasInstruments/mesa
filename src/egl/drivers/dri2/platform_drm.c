@@ -630,17 +630,19 @@ static const struct dri2_egl_display_vtbl dri2_drm_display_vtbl = {
 };
 
 static int
-get_fd_render_gpu_drm(struct gbm_dri_device *gbm_dri, int fd_display_gpu)
+get_fd_render_gpu_drm(struct gbm_dri_device *gbm_dri)
 {
+   int fd_render_gpu = gbm_dri_device_get_fd_render_gpu(gbm_dri);
+
    /* This doesn't make sense for the software case. */
    assert(!gbm_dri->software);
 
-   /* Render-capable device, so just return the same fd. */
-   if (loader_is_device_render_capable(fd_display_gpu))
-      return fd_display_gpu;
+   /* Render-capable device, so just duplicate the fd. */
+   if (loader_is_device_render_capable(fd_render_gpu))
+      return os_dupfd_cloexec(fd_render_gpu);
 
    /* Display-only device, so return a compatible render-only device. */
-   return dri_query_compatible_render_only_device_fd(fd_display_gpu);
+   return dri_query_compatible_render_only_device_fd(fd_render_gpu);
 }
 
 EGLBoolean
@@ -706,11 +708,13 @@ dri2_initialize_drm(_EGLDisplay *disp)
    dri2_dpy->gbm_dri = gbm_dri_device(gbm);
    if (!dri2_dpy->gbm_dri->software) {
       dri2_dpy->fd_render_gpu =
-         get_fd_render_gpu_drm(dri2_dpy->gbm_dri, dri2_dpy->fd_display_gpu);
+         get_fd_render_gpu_drm(dri2_dpy->gbm_dri);
       if (dri2_dpy->fd_render_gpu < 0) {
          err = "DRI2: failed to get compatible render device";
          goto cleanup;
       }
+   } else {
+      dri2_dpy->fd_render_gpu = dri2_dpy->fd_display_gpu;
    }
 
    if (strcmp(gbm_device_get_backend_name(gbm), "drm") != 0) {
