@@ -33,6 +33,10 @@ struct renderonly_scanout;
 struct winsys_handle;
 
 struct pipe_screen *
+pvr_ddk_screen_create(int fd, int kms_fd, bool use_kms_fd,
+                      const struct pipe_screen_config *config);
+
+struct pipe_screen *
 pvr_ddk_screen_create_renderonly(int fd, struct renderonly *ro,
                                  const struct pipe_screen_config *config);
 struct renderonly_scanout *

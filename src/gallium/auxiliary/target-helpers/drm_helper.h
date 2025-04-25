@@ -437,7 +437,7 @@ pipe_pvr_create_screen(int fd, int kms_fd, bool use_kms_fd,
 {
    struct pipe_screen *screen;
 
-   screen =  pvr_ddk_screen_create_renderonly(fd, NULL, config);
+   screen =  pvr_ddk_screen_create(fd, kms_fd, use_kms_fd, config);
    return screen ? debug_screen_wrap(screen) : NULL;
 }
 

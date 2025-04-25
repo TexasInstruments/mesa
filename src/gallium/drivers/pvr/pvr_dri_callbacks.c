@@ -236,7 +236,9 @@ MODSUPGetDisplayFD(struct __DRIscreenRec *psDRIScreen,
 {
    struct pvr_screen *screen = (struct pvr_screen *)psDRIScreen;
 
-   if (screen->display_fd != -1) {
+   if (screen->ro != NULL && screen->ro->use_kms_fd) {
+      return screen->ro->kms_fd;
+   } else if (screen->display_fd != -1) {
       return screen->display_fd;
    } else {
       const char *display_driver_name = DRISUPGetDisplayDriverName();

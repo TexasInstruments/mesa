@@ -22,6 +22,9 @@
  * THE SOFTWARE.
  */
 
+#include "renderonly/renderonly.h"
+#include "util/u_debug.h"
+#include "util/u_memory.h"
 #include "util/u_screen.h"
 
 #include "pvr_ddk_public.h"
@@ -33,6 +36,33 @@ pvr_ddk_screen_create_renderonly(int fd, struct renderonly *ro,
                                  const struct pipe_screen_config *config)
 {
    return u_pipe_screen_lookup_or_create(fd, config, ro, pvr_screen_create);
+}
+
+static void pvr_ddk_ro_destroy(struct renderonly *ro)
+{
+   FREE(ro);
+}
+
+struct pipe_screen *
+pvr_ddk_screen_create(int fd, int kms_fd, bool use_kms_fd,
+                      const struct pipe_screen_config *config)
+{
+   struct renderonly *ro = CALLOC_STRUCT(renderonly);
+   struct pipe_screen *screen;
+
+   if (!ro) {
+      debug_printf("%s: Out of memory\n", __func__);
+      return NULL;
+   }
+
+   ro->gpu_fd = fd;
+   ro->kms_fd = kms_fd;
+   ro->use_kms_fd = use_kms_fd;
+   ro->destroy = pvr_ddk_ro_destroy;
+
+   screen = pvr_ddk_screen_create_renderonly(fd, ro, config);
+
+   return screen;
 }
 
 struct renderonly_scanout *
