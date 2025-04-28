@@ -1722,6 +1722,19 @@ dri2_null_try_device(_EGLDisplay *disp)
    if (!dri2_null_device_is_kms(dri2_dpy->fd_display_gpu))
       return false;
 
+#if defined(NULL_DRI_DRIVER_NAME)
+   /* Skip devices not handled by NULL_DRI_DRIVER_NAME */
+   {
+      char *driver_name = loader_get_driver_for_fd(dri2_dpy->fd_display_gpu);
+      bool skip = !driver_name || !!strcmp(driver_name, NULL_DRI_DRIVER_NAME);
+
+      free(driver_name);
+
+      if (skip)
+         return false;
+   }
+#endif
+
    dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
    if (!dri2_dpy->driver_name)
       return false;

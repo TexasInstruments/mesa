@@ -161,6 +161,11 @@ else
   error('No EGL driver available.')
 endif
 if with_platform_null
+  if null_dri_driver_name != ''
+    c_args_for_egl += [
+      '-DNULL_DRI_DRIVER_NAME="@0@"'.format(null_dri_driver_name),
+    ]
+  endif
   files_egl += files('drivers/dri2/platform_null.c')
   incs_for_egl += [inc_loader]
   deps_for_egl += dep_libdrm

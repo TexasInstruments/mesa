@@ -444,6 +444,10 @@ with_platform_windows = _platforms.contains('windows')
 with_platform_macos = _platforms.contains('macos')
 with_platform_null = _platforms.contains('null')
 
+if with_platform_null
+  null_dri_driver_name = get_option('null-dri-driver-name')
+endif
+
 with_glx = get_option('glx')
 if with_glx == 'auto'
   if not with_opengl
