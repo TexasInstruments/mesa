@@ -129,6 +129,8 @@ dri_loader_get_cap(struct dri_screen *screen, enum dri_loader_cap cap)
  * \param color_depth_match Whether the color depth must match the zs depth
  *                          This forces 32-bit color to have 24-bit depth, and
  *                          16-bit color to have 16-bit depth.
+ * \param max_pbuffer_width  Maximum pbuffer width.
+ * \param max_pbuffer_height Maximum pbuffer height.
  *
  * \returns
  * Pointer to any array of pointers to the \c struct dri_config structures created
@@ -141,7 +143,8 @@ driCreateConfigs(enum pipe_format format,
                  enum pipe_format *zs_formats, unsigned num_zs_formats,
                  const bool *db_modes, unsigned num_db_modes,
                  const uint8_t * msaa_samples, unsigned num_msaa_modes,
-                 GLboolean enable_accum, GLboolean color_depth_match)
+                 GLboolean enable_accum, GLboolean color_depth_match,
+                 uint32_t max_pbuffer_width, uint32_t max_pbuffer_height)
 {
    uint32_t masks[4];
    int shifts[4];
@@ -356,6 +359,9 @@ driCreateConfigs(enum pipe_format format,
                     modes->YUVDepthRange = depth_ranges[m];
                     modes->YUVCSCStandard = csc_standards[n];
                     modes->YUVPlaneBPP = yuv_plane_bpp;
+
+		    modes->maxPbufferWidth = max_pbuffer_width;
+		    modes->maxPbufferHeight = max_pbuffer_height;
                 }
               }
             }
@@ -457,6 +463,8 @@ dri_fill_in_modes(struct dri_screen *screen)
    bool allow_rgb10;
    bool allow_fp16;
    bool allow_yuv;
+   uint32_t max_pbuffer_width;
+   uint32_t max_pbuffer_height;
 
    static const bool db_modes[] = { false, true };
 
@@ -497,6 +505,12 @@ dri_fill_in_modes(struct dri_screen *screen)
 
    accumulation_buffer =
       p_screen->caps.accumulation_buffer;
+
+   max_pbuffer_width =
+      p_screen->caps.max_pbuffer_width;
+
+   max_pbuffer_height =
+      p_screen->caps.max_pbuffer_height;
 
    /* Add configs. */
    for (unsigned f = 0; f < ARRAY_SIZE(pipe_formats); f++) {
@@ -553,7 +567,8 @@ dri_fill_in_modes(struct dri_screen *screen)
                                         zs_formats, num_zs_formats,
                                         db_modes, ARRAY_SIZE(db_modes),
                                         msaa_modes, 1,
-                                        accumulation_buffer, !mixed_color_depth);
+                                        accumulation_buffer, !mixed_color_depth,
+                                        max_pbuffer_width, max_pbuffer_height);
          configs = driConcatConfigs(configs, new_configs);
 
          /* Multi-sample configs without an accumulation buffer. */
@@ -562,7 +577,8 @@ dri_fill_in_modes(struct dri_screen *screen)
                                            zs_formats, num_zs_formats,
                                            db_modes, ARRAY_SIZE(db_modes),
                                            msaa_modes+1, num_msaa_modes-1,
-                                           GL_FALSE, !mixed_color_depth);
+                                           GL_FALSE, !mixed_color_depth,
+                                           max_pbuffer_width, max_pbuffer_height);
             configs = driConcatConfigs(configs, new_configs);
          }
       }

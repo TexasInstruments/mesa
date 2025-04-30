@@ -194,6 +194,9 @@ u_init_pipe_screen_caps(struct pipe_screen *pscreen, int accel)
    caps->image_dmabuf_export = true;
 
    caps->opengl_es2_context_client_version = false;
+
+   caps->max_pbuffer_width = 0;
+   caps->max_pbuffer_height = 0;
 }
 
 uint64_t u_default_get_timestamp(UNUSED struct pipe_screen *screen)
