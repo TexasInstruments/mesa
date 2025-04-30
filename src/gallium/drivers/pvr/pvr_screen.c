@@ -172,6 +172,9 @@ pvr_init_screen_caps(struct pvr_screen *screen)
 
    caps->accumulation_buffer = screen->config->enable_accum;
 
+   caps->max_pbuffer_width = screen->config->max_pbuffer_width;
+   caps->max_pbuffer_height = screen->config->max_pbuffer_height;
+
    /* Not implemented */
    caps->uma = true;
    /* Not implemented */
