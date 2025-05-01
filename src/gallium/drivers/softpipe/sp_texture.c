@@ -195,6 +195,23 @@ softpipe_resource_create(struct pipe_screen *screen,
    return softpipe_resource_create_front(screen, templat, NULL);
 }
 
+static struct pipe_resource *
+softpipe_resource_create_with_modifiers(struct pipe_screen *screen,
+                                        const struct pipe_resource *templat,
+                                        const uint64_t *modifiers, int count)
+{
+   bool have_linear;
+   int i;
+
+   for (i = 0, have_linear = false; i < count && !have_linear; i++)
+      have_linear = !modifiers[i];
+
+   if (count == 0 || have_linear)
+      return softpipe_resource_create(screen, templat);
+   else
+      return NULL;
+}
+
 static void
 softpipe_resource_destroy(struct pipe_screen *pscreen,
 			  struct pipe_resource *pt)
@@ -265,6 +282,24 @@ softpipe_resource_get_handle(struct pipe_screen *screen,
       return false;
 
    return winsys->displaytarget_get_handle(winsys, spr->dt, whandle);
+}
+
+
+static bool
+softpipe_resource_get_param(struct pipe_screen *screen,
+                       struct pipe_context *ctx,
+                       struct pipe_resource *rsc, unsigned plane,
+                       unsigned layer, unsigned level,
+                       enum pipe_resource_param param, unsigned usage,
+                       uint64_t *value)
+{
+   switch (param) {
+   case PIPE_RESOURCE_PARAM_MODIFIER:
+      *value = 0;
+      return true;
+   default:
+      return false;
+   }
 }
 
 
@@ -518,9 +553,11 @@ void
 softpipe_init_screen_texture_funcs(struct pipe_screen *screen)
 {
    screen->resource_create = softpipe_resource_create;
+   screen->resource_create_with_modifiers = softpipe_resource_create_with_modifiers;
    screen->resource_create_front = softpipe_resource_create_front;
    screen->resource_destroy = softpipe_resource_destroy;
    screen->resource_from_handle = softpipe_resource_from_handle;
    screen->resource_get_handle = softpipe_resource_get_handle;
+   screen->resource_get_param = softpipe_resource_get_param;
    screen->can_create_resource = softpipe_can_create_resource;
 }
