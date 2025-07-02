@@ -750,7 +750,10 @@ dri_create_image_from_winsys(struct dri_screen *screen,
                                        screen->target, 0, 0, PIPE_BIND_SAMPLER_VIEW)) {
          map = &r8_g8_b8_mapping;
          tex_usage |= PIPE_BIND_SAMPLER_VIEW;
-      } else if (map->dri_fourcc == DRM_FORMAT_YVU420 &&
+      }
+   }
+   if (!tex_usage && map->pipe_format == PIPE_FORMAT_YV12) {
+      if (map->dri_fourcc == DRM_FORMAT_YVU420 &&
           pscreen->is_format_supported(pscreen, PIPE_FORMAT_R8_B8_G8_420_UNORM,
                                        screen->target, 0, 0, PIPE_BIND_SAMPLER_VIEW)) {
          map = &r8_b8_g8_mapping;
