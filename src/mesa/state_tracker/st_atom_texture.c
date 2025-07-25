@@ -228,6 +228,8 @@ st_get_sampler_views(struct st_context *st,
          (*extra_sampler_views) |= 1 << extra;
          break;
       case PIPE_FORMAT_IYUV:
+      case PIPE_FORMAT_YV12:
+      case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
          if (stObj->pt->format == PIPE_FORMAT_R8_G8_B8_420_UNORM ||
              stObj->pt->format == PIPE_FORMAT_R8_B8_G8_420_UNORM)
             /* no additional views needed */

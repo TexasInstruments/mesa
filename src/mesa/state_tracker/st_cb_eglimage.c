@@ -65,6 +65,8 @@ is_format_supported(struct pipe_screen *screen, enum pipe_format format,
    if ((usage == PIPE_BIND_SAMPLER_VIEW) && !supported) {
       switch (format) {
       case PIPE_FORMAT_IYUV:
+      case PIPE_FORMAT_YV12:
+      case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
          supported = screen->is_format_supported(screen, PIPE_FORMAT_R8_UNORM,
                                                  PIPE_TEXTURE_2D, nr_samples,
                                                  nr_storage_samples, usage);
@@ -304,7 +306,7 @@ is_i420_as_r8_g8_b8_420_supported(struct pipe_screen *screen,
       return true;
    }
 
-   if (out->format == PIPE_FORMAT_IYUV &&
+   if (out->format == PIPE_FORMAT_YV12 &&
        out->texture->format == PIPE_FORMAT_R8_B8_G8_420_UNORM &&
        screen->is_format_supported(screen, PIPE_FORMAT_R8_B8_G8_420_UNORM,
                                    PIPE_TEXTURE_2D,
@@ -534,6 +536,8 @@ st_bind_egl_image(struct gl_context *ctx,
          texObj->RequiredTextureImageUnits = 1;
          break;
       case PIPE_FORMAT_IYUV:
+      case PIPE_FORMAT_YV12:
+      case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
          if (stimg->texture->format == PIPE_FORMAT_R8_G8_B8_420_UNORM ||
              stimg->texture->format == PIPE_FORMAT_R8_B8_G8_420_UNORM) {
             texFormat = MESA_FORMAT_R8G8B8X8_UNORM;

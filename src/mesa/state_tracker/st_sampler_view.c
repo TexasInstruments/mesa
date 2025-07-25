@@ -384,6 +384,8 @@ st_get_sampler_view_format(const struct st_context *st,
       }
       FALLTHROUGH;
    case PIPE_FORMAT_IYUV:
+   case PIPE_FORMAT_YV12:
+   case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
       if (texObj->pt->format == PIPE_FORMAT_R8_G8_B8_420_UNORM ||
           texObj->pt->format == PIPE_FORMAT_R8_B8_G8_420_UNORM) {
          format = texObj->pt->format;

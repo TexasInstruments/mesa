@@ -137,6 +137,8 @@ st_get_external_sampler_key(struct st_context *st, struct gl_program *prog)
          }
          FALLTHROUGH;
       case PIPE_FORMAT_IYUV:
+      case PIPE_FORMAT_YV12:
+      case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
          if (stObj->pt->format == PIPE_FORMAT_R8_G8_B8_420_UNORM ||
              stObj->pt->format == PIPE_FORMAT_R8_B8_G8_420_UNORM) {
             key.lower_yuv |= (1 << unit);
