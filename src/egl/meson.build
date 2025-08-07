@@ -245,7 +245,12 @@ if with_glvnd
     input : 'main/50_mesa.json',
     output: 'devenv_glvnd_egl.json',
   )
-  devenv.set('__EGL_VENDOR_LIBRARY_FILENAMES', devenv_glvnd_egl_json_file.full_path())
+
+  if meson.version().version_compare('<1.4.0')
+    devenv.set('__EGL_VENDOR_LIBRARY_FILENAMES', '@0@'.format(devenv_glvnd_egl_json_file))
+  else
+    devenv.set('__EGL_VENDOR_LIBRARY_FILENAMES', devenv_glvnd_egl_json_file.full_path())
+  endif
 else
   pkg.generate(
     name : 'egl',
