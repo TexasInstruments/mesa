@@ -1337,13 +1337,11 @@ wsi_common_get_memory(VkSwapchainKHR _swapchain, uint32_t index)
    return swapchain->get_wsi_image(swapchain, index)->memory;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-wsi_GetSwapchainImagesKHR(VkDevice device,
-                          VkSwapchainKHR _swapchain,
-                          uint32_t *pSwapchainImageCount,
-                          VkImage *pSwapchainImages)
+VkResult
+wsi_common_get_images(VkSwapchainKHR _swapchain,
+                      uint32_t *pSwapchainImageCount,
+                      VkImage *pSwapchainImages)
 {
-   MESA_TRACE_FUNC();
    VK_FROM_HANDLE(wsi_swapchain, swapchain, _swapchain);
    VK_OUTARRAY_MAKE_TYPED(VkImage, images, pSwapchainImages, pSwapchainImageCount);
 
@@ -1354,6 +1352,18 @@ wsi_GetSwapchainImagesKHR(VkDevice device,
    }
 
    return vk_outarray_status(&images);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_GetSwapchainImagesKHR(VkDevice device,
+                          VkSwapchainKHR swapchain,
+                          uint32_t *pSwapchainImageCount,
+                          VkImage *pSwapchainImages)
+{
+   MESA_TRACE_FUNC();
+   return wsi_common_get_images(swapchain,
+                                pSwapchainImageCount,
+                                pSwapchainImages);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
