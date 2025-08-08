@@ -255,8 +255,19 @@ wsi_headless_surface_get_present_rectangles(VkIcdSurfaceBase *surface,
 }
 
 struct wsi_headless_image {
-   struct wsi_image                             base;
-   bool                                         busy;
+   struct wsi_image base;
+
+   /* whether the host side ownership is taken by the app or the display */
+   bool busy_on_host;
+
+   /* whether the image may still be worked on by the device
+    *
+    * The headless display does not involve a presentation queue to wait for
+    * the gpu out-fence. To let the app acquire the most likely idle image, we
+    * use a second boolean to steer the app to acquire all the swapchain images
+    * in a loop.
+    */
+   bool busy_on_device;
 };
 
 struct wsi_headless_swapchain {
@@ -306,10 +317,17 @@ wsi_headless_swapchain_acquire_next_image(struct wsi_swapchain *wsi_chain,
    while (1) {
       /* Try to find a free image. */
       for (uint32_t i = 0; i < chain->base.image_count; i++) {
-         if (!chain->images[i].busy) {
+         if (!chain->images[i].busy_on_host) {
+            if (chain->images[i].busy_on_device) {
+               /* simple trick to avoid the just presented image */
+               chain->images[i].busy_on_device = false;
+               continue;
+            }
+
             /* We found a non-busy image */
             *image_index = i;
-            chain->images[i].busy = true;
+            chain->images[i].busy_on_host = true;
+            chain->images[i].busy_on_device = true;
             return VK_SUCCESS;
          }
       }
@@ -333,7 +351,7 @@ wsi_headless_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
 
    assert(image_index < chain->base.image_count);
 
-   chain->images[image_index].busy = false;
+   chain->images[image_index].busy_on_host = false;
 
    if (present_id) {
       mtx_lock(&chain->present_id_mutex);
@@ -606,7 +624,8 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
          goto fail;
       }
 
-      chain->images[i].busy = false;
+      chain->images[i].busy_on_host = false;
+      chain->images[i].busy_on_device = false;
    }
 
    *swapchain_out = &chain->base;
