@@ -246,10 +246,10 @@ surfaceless_probe_device(_EGLDisplay *disp, bool swrast, bool zink)
       if (dri2_dpy->fd_render_gpu < 0)
          goto next;
 
-#ifdef HAVE_WAYLAND_PLATFORM
       loader_get_user_preferred_fd(&dri2_dpy->fd_render_gpu,
                                    &dri2_dpy->fd_display_gpu);
 
+#ifdef HAVE_WAYLAND_PLATFORM
       if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu) {
          free(dri2_dpy->device_name);
          dri2_dpy->device_name =
