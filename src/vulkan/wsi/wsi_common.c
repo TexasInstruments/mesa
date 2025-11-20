@@ -117,8 +117,10 @@ wsi_device_init2(struct wsi_device *wsi,
       wsi->has_import_memory_host =
          supported_extensions->EXT_external_memory_host;
       wsi->khr_present_wait =
-         supported_extensions->KHR_present_id &&
-         supported_extensions->KHR_present_wait;
+         (supported_extensions->KHR_present_id &&
+          supported_extensions->KHR_present_wait) ||
+         (supported_extensions->KHR_present_id2 &&
+          supported_extensions->KHR_present_wait2);
       wsi->has_timeline_semaphore =
          supported_extensions->KHR_timeline_semaphore;
 

@@ -51,6 +51,8 @@ pvr_mesa_wsi_device_extensions(struct pvr_mesa_wsi *mwsi,
    CHECK_DEV_EXT(mwsi, det, EXT_external_memory_host);
    CHECK_DEV_EXT(mwsi, det, EXT_pci_bus_info);
    CHECK_DEV_EXT(mwsi, det, KHR_present_id);
+   CHECK_DEV_EXT(mwsi, det, KHR_present_id2);
    CHECK_DEV_EXT(mwsi, det, KHR_present_wait);
+   CHECK_DEV_EXT(mwsi, det, KHR_present_wait2);
    CHECK_DEV_EXT(mwsi, det, KHR_timeline_semaphore);
 }

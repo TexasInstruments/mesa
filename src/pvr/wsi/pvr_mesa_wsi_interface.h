@@ -340,6 +340,18 @@ pvr_mesa_wsi_common_wait_for_present(struct pvr_mesa_wsi *mwsi,
  */
 
 /*
+ * Version 5 of the interface supports the VK_KHR_present_id2 and
+ * VK_KHR_present_wait2 extensions.
+ *
+ * The following function is available in version 5 of the interface.
+ * Version 5 also supports the version 4 interface.
+ */
+VkResult
+pvr_mesa_wsi_common_wait_for_present2(struct pvr_mesa_wsi *mwsi,
+                                      VkSwapchainKHR swapchain,
+                                      const VkPresentWait2InfoKHR *info);
+
+/*
  * Functions defined in the PowerVR DDK for use by Mesa.
  * All functions have a "pvr_vk_mesa_wsi" prefix.
  * Since the introduction of version 1 of the interface, the following

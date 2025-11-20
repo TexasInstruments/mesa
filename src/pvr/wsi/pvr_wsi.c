@@ -320,7 +320,7 @@ pvr_mesa_wsi_common_get_present_rectangles(struct pvr_mesa_wsi *mwsi,
 uint32_t
 pvr_mesa_wsi_get_version(UNUSED struct pvr_mesa_wsi *mwsi)
 {
-   return 4;
+   return 5;
 }
 
 void
@@ -340,6 +340,15 @@ pvr_mesa_wsi_common_wait_for_present(struct pvr_mesa_wsi *mwsi,
    return wsi_common_wait_for_present(swapchain,
                                       presentId,
                                       timeout);
+}
+
+VkResult
+pvr_mesa_wsi_common_wait_for_present2(struct pvr_mesa_wsi *mwsi,
+                                      VkSwapchainKHR swapchain,
+                                      const VkPresentWait2InfoKHR *info)
+{
+   return wsi_common_wait_for_present2(swapchain,
+                                       info);
 }
 
 /*
@@ -445,6 +454,8 @@ pvr_mesa_wsi_sym_addr(UNUSED struct pvr_mesa_wsi *mwsi, const char *name)
             pvr_mesa_wsi_create_headless_surface },
       { "pvr_mesa_wsi_common_wait_for_present",
             pvr_mesa_wsi_common_wait_for_present },
+      { "pvr_mesa_wsi_common_wait_for_present2",
+            pvr_mesa_wsi_common_wait_for_present2 },
    };
    unsigned i;
 
