@@ -123,6 +123,20 @@ wsi_headless_surface_get_capabilities2(VkIcdSurfaceBase *surface,
          break;
       }
 
+      case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR: {
+         VkSurfaceCapabilitiesPresentId2KHR *pid2 = (void *)ext;
+
+         pid2->presentId2Supported = VK_TRUE;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_WAIT_2_KHR: {
+         VkSurfaceCapabilitiesPresentWait2KHR *pwait2 = (void *)ext;
+
+         pwait2->presentWait2Supported = VK_TRUE;
+         break;
+      }
+
       default:
          /* Ignored */
          break;
@@ -575,6 +589,7 @@ wsi_headless_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    chain->base.acquire_next_image = wsi_headless_swapchain_acquire_next_image;
    chain->base.queue_present = wsi_headless_swapchain_queue_present;
    chain->base.wait_for_present = wsi_headless_wait_for_present;
+   chain->base.wait_for_present2 = wsi_headless_wait_for_present;
    chain->base.present_mode = wsi_swapchain_get_present_mode(wsi_device, pCreateInfo);
    chain->base.image_count = num_images;
    chain->extent = pCreateInfo->imageExtent;
