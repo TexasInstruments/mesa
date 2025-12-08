@@ -452,8 +452,10 @@ struct pipe_screen *pvr_screen_create(int fd,
 
    screen->base.check_driver_compatibility = pvr_check_driver_compatibility;
 
-   if (!PVRDRICompatInit(&pvrdri_callbacks, 6, 0))
+   if (!PVRDRICompatInit(&pvrdri_callbacks, 6, 0)) {
+      ralloc_free(screen);
       return NULL;
+   }
 
    pipe_reference_init(&screen->ref, 1);
 
