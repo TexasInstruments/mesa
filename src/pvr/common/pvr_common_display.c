@@ -30,6 +30,7 @@
 #include <fcntl.h>
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <xf86drm.h>
@@ -40,11 +41,10 @@
 
 #include "pvr/common/pvr_common_display.h"
 
-#define PVR_DRM_MINOR_PRIMARY_START 0
-#define PVR_DRM_MINOR_PRIMARY_END   63
+#define PVR_DRM_MINOR_ARRAY_SIZE 256
 
-#define PVR_DRM_MINOR_RENDER_START 128
-#define PVR_DRM_MINOR_RENDER_END   191
+#define PVR_DRM_DEV_SCANF_PRIMARY (DRM_DIR_NAME "/" DRM_PRIMARY_MINOR_NAME "%d")
+#define PVR_DRM_DEV_SCANF_RENDER (DRM_DIR_NAME "/" DRM_RENDER_MINOR_NAME "%d")
 
 static bool
 pvr_common_driver_name_match(int fd, const char *driver_name)
@@ -62,22 +62,8 @@ pvr_common_driver_name_match(int fd, const char *driver_name)
 }
 
 static int
-pvr_common_open_drm_minor(const int nminor)
+pvr_common_open_drm_dev(const char *path)
 {
-   char path[PATH_MAX];
-   const char *dev_name;
-
-   if (nminor >= PVR_DRM_MINOR_PRIMARY_START &&
-       nminor <= PVR_DRM_MINOR_PRIMARY_END)
-      dev_name = DRM_DEV_NAME;
-   else if (nminor >= PVR_DRM_MINOR_RENDER_START &&
-            nminor <= PVR_DRM_MINOR_RENDER_END)
-      dev_name = DRM_RENDER_DEV_NAME;
-   else
-      return -1;
-
-   snprintf(path, sizeof(path), dev_name, DRM_DIR_NAME, nminor);
-
    return open(path, O_RDWR | O_CLOEXEC, 0);
 }
 
@@ -137,20 +123,43 @@ static int
 pvr_common_open_nearest_display_range(const char *match_link,
                                       const char *match_name,
                                       const unsigned int nmajor,
-                                      const int first_minor,
-                                      const int last_minor)
+                                      const drmDevicePtr *devices,
+                                      const int num_devices,
+                                      const unsigned int type)
 {
    int fd = -1;
    size_t best_match = 0;
    char dev_path[PATH_MAX];
    int i;
 
-   for (i = first_minor; i <= last_minor; i++) {
+   if (type != DRM_NODE_PRIMARY && type != DRM_NODE_RENDER)
+      return -1;
+
+   for (i = 0; i < num_devices; i++) {
+      int dminor;
       char dev_link[PATH_MAX];
       size_t match;
       int ret;
 
-      ret = pvr_common_open_drm_minor(i);
+      if (!(devices[i]->available_nodes & (1 << type)))
+         continue;
+
+      errno = 0;
+      ret = sscanf(devices[i]->nodes[type],
+                   type == (DRM_NODE_PRIMARY) ? PVR_DRM_DEV_SCANF_PRIMARY :
+                                                PVR_DRM_DEV_SCANF_RENDER,
+                   &dminor);
+      if (ret != 1) {
+         if (errno)
+            debug_printf("%s: sscanf of device name failed (error=%d)",
+                         __func__, errno);
+         else
+            debug_printf("%s: sscanf found no matching characters",
+                         __func__);
+         continue;
+      }
+
+      ret = pvr_common_open_drm_dev(devices[i]->nodes[type]);
       if (ret == -1)
          continue;
 
@@ -160,7 +169,7 @@ pvr_common_open_nearest_display_range(const char *match_link,
       }
 
       if (!pvr_common_get_sys_dev_char_path(dev_path, sizeof(dev_path),
-                                            nmajor, i)) {
+                                            nmajor, dminor)) {
          close(ret);
          continue;
       }
@@ -221,6 +230,8 @@ pvr_common_open_nearest_display(int match_fd, const char *match_name)
    char match_link[PATH_MAX];
    struct stat st;
    unsigned int nmajor, nminor;
+   drmDevicePtr devices[PVR_DRM_MINOR_ARRAY_SIZE];
+   int num_devices;
 
    if (fstat(match_fd, &st) == -1) {
       debug_printf("%s: couldn't stat the FD to match (errno=%d)",
@@ -238,13 +249,22 @@ pvr_common_open_nearest_display(int match_fd, const char *match_name)
    if (!pvr_common_read_link(match_link, sizeof(match_link), dev_path))
       return -1;
 
+   num_devices = drmGetDevices2(0, devices, PVR_DRM_MINOR_ARRAY_SIZE);
+   if (num_devices < 0) {
+      debug_printf("%s: drmGetDevices2 failed (error=%d)",
+                   __func__, -num_devices);
+      return -1;
+   }
+
    fd = pvr_common_open_nearest_display_range(match_link, match_name, nmajor,
-                                              PVR_DRM_MINOR_RENDER_START,
-                                              PVR_DRM_MINOR_RENDER_END);
+                                              devices, num_devices,
+                                              DRM_NODE_RENDER);
    if (fd == -1)
       fd = pvr_common_open_nearest_display_range(match_link, match_name, nmajor,
-                                                 PVR_DRM_MINOR_PRIMARY_START,
-                                                 PVR_DRM_MINOR_PRIMARY_END);
+                                                 devices, num_devices,
+                                                 DRM_NODE_PRIMARY);
+   drmFreeDevices(devices, num_devices);
+
    return fd;
 }
 

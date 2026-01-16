@@ -30,6 +30,7 @@
 #include <fcntl.h>
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <xf86drm.h>
@@ -41,8 +42,9 @@
 #include "pvr_ddk_private.h"
 #include "pvr_ddk_public.h"
 
-#define PVR_DRM_MINOR_RENDER_START 128
-#define PVR_DRM_MINOR_RENDER_END   191
+#define PVR_DRM_MINOR_ARRAY_SIZE 256
+
+#define PVR_DRM_DEV_SCANF_RENDER (DRM_DIR_NAME "/" DRM_RENDER_MINOR_NAME "%d")
 
 #define PVR_STRINGIFY_HELPER(x) # x
 #define PVR_STRINGIFY(x) PVR_STRINGIFY_HELPER(x)
@@ -108,22 +110,9 @@ pvr_ddk_is_driver_compat_fd(int fd)
 }
 
 static int
-pvr_open_render_minor(const int nminor)
+pvr_open_pvr_drm_dev(const char *path)
 {
-   char path[PATH_MAX];
-
-   assert(nminor >= PVR_DRM_MINOR_RENDER_START &&
-          nminor <= PVR_DRM_MINOR_RENDER_END);
-
-   snprintf(path, sizeof(path), DRM_RENDER_DEV_NAME, DRM_DIR_NAME, nminor);
-
-   return open(path, O_RDWR | O_CLOEXEC, 0);
-}
-
-static int
-pvr_open_pvr_dev_minor(const int nminor)
-{
-   int fd = pvr_open_render_minor(nminor);
+   int fd = open(path, O_RDWR | O_CLOEXEC, 0);
 
    if (fd != -1 && !pvr_driver_is_pvr_fd(fd)) {
       close(fd);
@@ -223,6 +212,8 @@ pvr_open_nearest_render(int match_fd)
    char match_link[PATH_MAX];
    struct stat st;
    unsigned int nmajor, nminor;
+   drmDevicePtr devices[PVR_DRM_MINOR_ARRAY_SIZE];
+   int num_devices;
    int i;
 
    if (fstat(match_fd, &st) == -1) {
@@ -240,16 +231,41 @@ pvr_open_nearest_render(int match_fd)
    if (!pvr_read_link(match_link, sizeof(match_link), dev_path))
       return -1;
 
-   for (i = PVR_DRM_MINOR_RENDER_START; i <= PVR_DRM_MINOR_RENDER_END; i++) {
+   num_devices = drmGetDevices2(0, devices, PVR_DRM_MINOR_ARRAY_SIZE);
+   if (num_devices < 0) {
+      debug_printf("%s: drmGetDevices2 failed (error=%d)",
+                   __func__, -num_devices);
+      return -1;
+   }
+
+   for (i = 0; i < num_devices; i++) {
+      int rminor;
       char dev_link[PATH_MAX];
       size_t match;
       int ret;
 
-      ret = pvr_open_pvr_dev_minor(i);
+      if (!(devices[i]->available_nodes & (1 << DRM_NODE_RENDER)))
+         continue;
+
+      errno = 0;
+      ret = sscanf(devices[i]->nodes[DRM_NODE_RENDER],
+                   PVR_DRM_DEV_SCANF_RENDER, &rminor);
+      if (ret != 1) {
+         if (errno)
+            debug_printf("%s: sscanf of device name failed (error=%d)",
+                         __func__, errno);
+         else
+            debug_printf("%s: sscanf found no matching characters",
+                         __func__);
+         continue;
+      }
+
+      ret = pvr_open_pvr_drm_dev(devices[i]->nodes[DRM_NODE_RENDER]);
       if (ret == -1)
          continue;
 
-      if (!pvr_get_sys_dev_char_path(dev_path, sizeof(dev_path), nmajor, i)) {
+      if (!pvr_get_sys_dev_char_path(dev_path, sizeof(dev_path),
+                                     nmajor, rminor)) {
          close(ret);
          continue;
       }
@@ -271,6 +287,8 @@ pvr_open_nearest_render(int match_fd)
          close(ret);
       }
    }
+
+   drmFreeDevices(devices, num_devices);
 
    return fd;
 
