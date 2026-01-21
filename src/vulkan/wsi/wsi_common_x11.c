@@ -154,7 +154,6 @@ wsi_x11_check_dri3_compatible(const struct wsi_device *wsi_dev,
    xcb_screen_iterator_t screen_iter =
       xcb_setup_roots_iterator(xcb_get_setup(conn));
    xcb_screen_t *screen = screen_iter.data;
-   bool match;
 
    /* Open the DRI3 device from the X server. If we do not retrieve one we
     * assume our local device is compatible.
@@ -163,13 +162,7 @@ wsi_x11_check_dri3_compatible(const struct wsi_device *wsi_dev,
    if (dri3_fd == -1)
       return true;
 
-   int alloc_fd = wsi_dev->get_allocation_device(wsi_dev->pdevice, dri3_fd);
-   if (alloc_fd != -1) {
-      close(alloc_fd);
-      match = true;
-   } else {
-      match = wsi_dev->can_present_on_device(wsi_dev->pdevice, dri3_fd);
-   }
+   bool match = wsi_dev->can_present_on_device(wsi_dev->pdevice, dri3_fd);
 
    close(dri3_fd);
 
