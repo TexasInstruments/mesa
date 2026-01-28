@@ -39,6 +39,7 @@ librusticl = shared_library(
     driver_nouveau,
     driver_r600,
     driver_panfrost,
+    driver_pvr,
     driver_radeonsi,
     driver_swrast,
     driver_v3d,

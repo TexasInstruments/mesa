@@ -78,7 +78,7 @@ else
     link_whole : [libva_st],
     link_with : link_with_libva_gallium,
     dependencies : [
-      dep_libdrm, driver_r600, driver_radeonsi, driver_nouveau, driver_d3d12, driver_virgl,
+      dep_libdrm, driver_r600, driver_radeonsi, driver_nouveau, driver_d3d12, driver_virgl, driver_pvr,
       idep_mesautil,
     ],
     link_depends : va_link_depends,

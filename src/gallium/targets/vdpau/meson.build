@@ -42,6 +42,7 @@ libvdpau_gallium = shared_library(
   dependencies : [
     idep_mesautil,
     driver_r600, driver_radeonsi, driver_nouveau, driver_d3d12, driver_virgl,
+    driver_pvr,
   ],
   link_depends : vdpau_link_depends,
   soversion : '@0@.@1@.0'.format(VDPAU_MAJOR, VDPAU_MINOR),
