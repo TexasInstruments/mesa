@@ -352,7 +352,8 @@ DRM_DRIVER_DESCRIPTOR_STUB(panthor)
 #include "asahi/drm/asahi_drm_public.h"
 
 static struct pipe_screen *
-pipe_asahi_create_screen(int fd, const struct pipe_screen_config *config)
+pipe_asahi_create_screen(int fd, int kms_fd, bool use_kms_fd,
+                         const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
