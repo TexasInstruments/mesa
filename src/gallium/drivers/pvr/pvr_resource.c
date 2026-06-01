@@ -100,6 +100,8 @@ pvr_pipe_format_to_fourcc(enum pipe_format format)
       return DRM_FORMAT_UYVY;
    case PIPE_FORMAT_B4G4R4A4_UNORM:
       return DRM_FORMAT_ARGB4444;
+   case PIPE_FORMAT_B8G8R8_UNORM:
+      return DRM_FORMAT_RGB888;
    case PIPE_FORMAT_NV12:
       return DRM_FORMAT_NV12;
    case PIPE_FORMAT_NV21:
