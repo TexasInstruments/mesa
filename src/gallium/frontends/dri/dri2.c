@@ -195,7 +195,6 @@ dri2_allocate_textures(struct dri_context *ctx,
    struct pipe_resource templ;
    bool alloc_depthstencil = false;
    unsigned i, j;
-   const __DRIimageLoaderExtension *image = screen->image.loader;
    /* Image specific variables */
    struct __DRIimageList images;
 
@@ -207,7 +206,7 @@ dri2_allocate_textures(struct dri_context *ctx,
    }
 
    /* First get the buffers from the loader */
-   assert(image);
+   assert(screen->image.loader);
    if (!dri_image_drawable_get_buffers(drawable, &images,
                                        statts, statts_count))
       return false;
