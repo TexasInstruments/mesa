@@ -332,9 +332,14 @@ lp_build_fill_mattrs(std::vector<std::string> &MAttrs)
       llvm::sys::getHostCPUFeatures(features);
    #endif
 
+   #if LLVM_VERSION_MAJOR >= 19
+   for (auto f = features.begin();
+   #else
    for (llvm::StringMapIterator<bool> f = features.begin();
-        f != features.end();
-        ++f) {
+   #endif
+          f != features.end();
+         ++f)
+   {
       MAttrs.push_back(((*f).second ? "+" : "-") + (*f).first().str());
    }
 #elif DETECT_ARCH_X86 || DETECT_ARCH_X86_64
