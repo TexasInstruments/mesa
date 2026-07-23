@@ -28,6 +28,7 @@ libpvr_compile_args = [
 libpvr_dependencies = [
   dep_libdrm,
   idep_mesautil,
+  idep_dispatch_h
 ]
 
 libpvr = static_library(
